@@ -1,57 +1,49 @@
-# MCP de Pexels
+# Conector de Pexels para claude.ai
 
-Puente entre Claude y la API de Pexels: buscar, ver y descargar fotos y videos, y abrir tus colecciones.
+Este conector le da a Claude acceso a Pexels con nuestra clave de la API. Con él, Claude puede buscar y ver fotos y videos, y abrir nuestras colecciones.
 
-Funciona solo con Node 18 o superior. No usa dependencias, así que no necesitas `npm install`.
+El endpoint está en la app (`src/app/api/mcp/pexels/[token]/route.ts`) y la lógica en `src/engine/pexels-mcp.ts`. Se despliega con Vercel al subir a `main`.
 
-## Clave
+## URL del conector
 
-El servidor busca `PEXELS_API_KEY` en este orden:
+```
+https://app.hancel.xyz/api/mcp/pexels/<TOKEN>
+```
 
-1. La variable de entorno `PEXELS_API_KEY`.
-2. El archivo `.env.local` (o `.env`) en la raíz de este repo.
-
-## Conectarlo
-
-**Claude Code, dentro de este repo:** ya viene registrado en `.mcp.json`. La primera vez Claude te pregunta si apruebas el servidor `pexels`; dile que sí.
-
-**Claude Code, en cualquier carpeta:**
+El token protege la cuota de Pexels porque claude.ai no deja mandar cabeceras propias a un conector. Si no hay `PEXELS_MCP_TOKEN` en Vercel, el token se calcula a partir de la clave de Pexels:
 
 ```bash
-claude mcp add pexels --scope user -- node "C:/Users/setr7/Documents/engine-hancel/mcp/pexels/server.mjs"
+node -e "const k=require('fs').readFileSync('.env.local','utf8').match(/^PEXELS_API_KEY=(.*)$/m)[1].trim();console.log(require('crypto').createHash('sha256').update('pexels-mcp:'+k).digest('hex').slice(0,32))"
 ```
 
-**Claude Desktop:** agrega esto a `%APPDATA%\Claude\claude_desktop_config.json` y reinicia la app:
+Si cambias la clave de Pexels, cambia también la URL. Para fijar un token propio, define `PEXELS_MCP_TOKEN` en Vercel.
 
-```json
-{
-  "mcpServers": {
-    "pexels": {
-      "command": "node",
-      "args": ["C:/Users/setr7/Documents/engine-hancel/mcp/pexels/server.mjs"]
-    }
-  }
-}
-```
+## Instalarlo en claude.ai
+
+1. Abre claude.ai y ve a **Configuración → Conectores**.
+2. Pulsa **Agregar conector personalizado**.
+3. Escribe *Pexels* como nombre, pega la URL de arriba y pulsa **Agregar**.
+4. En un chat, actívalo desde el botón **+ → Conectores**.
 
 ## Herramientas
 
 | Herramienta | Qué hace |
 |---|---|
 | `buscar_fotos` | Busca fotos por palabra clave, con filtros de orientación, tamaño, color e idioma |
-| `fotos_destacadas` | Fotos curadas por Pexels |
-| `obtener_foto` | Datos de una foto por su id |
-| `ver_fotos` | Le muestra a Claude hasta 6 fotos como imagen para que pueda elegir |
-| `descargar_foto` | Guarda una foto en disco (por defecto en `~/Downloads/pexels`) |
+| `fotos_destacadas` | Muestra las fotos curadas por Pexels |
+| `obtener_foto` | Trae los datos y los enlaces de descarga de una foto |
+| `ver_fotos` | Le muestra a Claude hasta 6 fotos como imagen |
 | `buscar_videos` | Busca videos y devuelve los MP4 de cada calidad |
-| `videos_populares` | Videos populares, con filtros de tamaño y duración |
-| `obtener_video` | Datos de un video por su id |
-| `mis_colecciones` | Las colecciones de tu cuenta de Pexels |
-| `colecciones_destacadas` | Colecciones destacadas de Pexels |
-| `contenido_coleccion` | Las fotos y videos de una colección |
+| `videos_populares` | Muestra los videos populares |
+| `obtener_video` | Trae los datos de un video |
+| `mis_colecciones` | Lista las colecciones de nuestra cuenta de Pexels |
+| `colecciones_destacadas` | Lista las colecciones destacadas de Pexels |
+| `contenido_coleccion` | Muestra las fotos y videos de una colección |
 
-## Prueba rápida
+## Versión local
+
+`server.mjs` es el mismo puente para clientes locales por stdio, como Claude Code o Claude Desktop:
 
 ```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node mcp/pexels/server.mjs
+claude mcp add pexels -- node "<ruta>/mcp/pexels/server.mjs"
 ```

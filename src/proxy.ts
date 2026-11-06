@@ -35,6 +35,9 @@ const ABIERTAS = [
   // Los archivos publicos (laminas, logos, el HTML que importa Canva): los
   // leen Canva, Meta y el portal, sin sesion.
   "/api/archivo",
+  // El conector MCP de Pexels: lo llama claude.ai desde sus servidores. Se
+  // autoriza con el token de la URL (ver `engine/pexels-mcp.ts`).
+  "/api/mcp",
 ]
 
 function esAbierta(pathname: string): boolean {
