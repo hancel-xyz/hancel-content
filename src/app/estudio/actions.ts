@@ -18,7 +18,7 @@ import { runContentTick } from "@/engine/content/tick"
 import type { ContentAngle, ContentPiece, Red, Variables } from "@/engine/content/types"
 import { parseVariables, validateVariables } from "@/engine/content/variables"
 import { disconnectLinkedin } from "@/engine/publish/linkedin"
-import { publishPiece } from "@/engine/publish/publish-piece"
+import { publicarConHermanas, REDES_CARRUSEL } from "@/engine/publish/publish-piece"
 import { FUENTES, PALETAS, PLANTILLAS } from "@/engine/render/theme"
 import { supabaseAdmin } from "@/engine/supabase-admin"
 import type { RawNews } from "@/lib/types"
@@ -339,16 +339,32 @@ async function setPieceStatus(
   if (!pieceId) return { ok: false, error: "Falta el id de la pieza." }
 
   try {
-    const { error } = await supabaseAdmin()
+    const accountId = await idDeCuentaActual()
+    const cambio = {
+      status,
+      approved_at: status === "approved" ? new Date().toISOString() : null,
+    }
+    const { data: fila, error } = await supabaseAdmin()
       .from("content_pieces")
-      .update({
-        status,
-        approved_at: status === "approved" ? new Date().toISOString() : null,
-      })
+      .update(cambio)
       .eq("id", pieceId)
-      .eq("account_id", await idDeCuentaActual())
+      .eq("account_id", accountId)
+      .select("network, job_instagram_id")
+      .maybeSingle()
 
     if (error) throw new Error(error.message)
+
+    // Instagram y Facebook son el mismo carrusel: aprobar o descartar uno vale
+    // para los dos, o la cola de una red se correria respecto a la otra.
+    if (fila?.job_instagram_id && REDES_CARRUSEL.includes(fila.network)) {
+      await supabaseAdmin()
+        .from("content_pieces")
+        .update(cambio)
+        .eq("job_instagram_id", fila.job_instagram_id)
+        .eq("account_id", accountId)
+        .in("network", REDES_CARRUSEL)
+        .is("published_at", null)
+    }
     refresh()
     return { ok: true }
   } catch (error) {
@@ -413,9 +429,13 @@ export async function publishPieceNow(pieceId: string): Promise<ActionResult> {
 
   if (!count) return { ok: false, error: "Esa pieza no es de esta cuenta." }
 
-  const result = await publishPiece(pieceId)
+  // Un carrusel sale a Instagram y Facebook a la vez, tambien a mano.
+  const resultados = await publicarConHermanas(pieceId)
   refresh()
-  return result.ok ? { ok: true } : { ok: false, error: result.error }
+  const fallos = resultados.filter((r) => !r.result.ok)
+  return fallos.length === 0
+    ? { ok: true }
+    : { ok: false, error: fallos.map((f) => `${f.network}: ${(f.result as { error: string }).error}`).join(" · ") }
 }
 
 /**
@@ -1015,13 +1035,13 @@ export async function moverFicha(
         .eq("account_id", accountId),
       supabase
         .from("content_pieces")
-        .select("id, status, published_at")
+        .select("id, status, published_at, network, job_instagram_id")
         .eq("raw_news_id", newsId)
         .eq("account_id", accountId),
     ])
 
     const angulo = (angulos ?? [])[0] as { id: string; status: string } | undefined
-    const misPiezas = (piezas ?? []) as { id: string; status: string; published_at: string | null }[]
+    const misPiezas = (piezas ?? []) as { id: string; status: string; published_at: string | null; network: string; job_instagram_id: string | null }[]
 
     switch (destino) {
       case "analizada": {
@@ -1084,9 +1104,13 @@ export async function moverFicha(
         }
         // Publicar sale a las redes y no se deshace, asi que el aviso lo da la
         // interfaz antes de llamar aqui; a estas alturas ya esta confirmado.
+        // La hermana de un carrusel ya sale con la primera: se salta.
+        const yaSalieron = new Set<string>()
         for (const pieza of publicables) {
+          if (pieza.job_instagram_id && yaSalieron.has(pieza.job_instagram_id)) continue
           const r = await publishPieceNow(pieza.id)
           if (!r.ok) return r
+          if (pieza.job_instagram_id && REDES_CARRUSEL.includes(pieza.network)) yaSalieron.add(pieza.job_instagram_id)
         }
         return { ok: true }
       }

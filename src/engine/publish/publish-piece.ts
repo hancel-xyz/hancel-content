@@ -94,6 +94,79 @@ export async function publishPiece(pieceId: string): Promise<PublishResult> {
 }
 
 /**
+ * Un carrusel es una sola publicacion que sale a dos redes.
+ *
+ * Instagram y Facebook guardan cada uno su pieza, pero las dos salen del mismo
+ * guion (mismo `job_instagram_id`). Antes cada red tenia su cola y avanzaba por
+ * su cuenta: bastaba con que una pieza faltara o fallara en una red para que la
+ * otra se corriera un puesto, y a la misma hora salia un carrusel en Instagram
+ * y otro distinto en Facebook. Ahora se publica la pieza y, en cuanto sale, sus
+ * hermanas de las otras redes del carrusel, en la misma pasada.
+ *
+ * Si la primera falla no sale ninguna: se reintentan juntas en la siguiente.
+ */
+export async function publicarConHermanas(
+  pieceId: string
+): Promise<{ pieceId: string; network: string; result: PublishResult }[]> {
+  const supabase = supabaseAdmin()
+  const { data: fila } = await supabase
+    .from("content_pieces")
+    .select("network, job_instagram_id")
+    .eq("id", pieceId)
+    .maybeSingle()
+
+  const salida = [{ pieceId, network: String(fila?.network ?? ""), result: await publishPiece(pieceId) }]
+  if (!salida[0].result.ok || !fila?.job_instagram_id || !REDES_CARRUSEL.includes(fila.network)) {
+    return salida
+  }
+
+  for (const hermana of await hermanasPendientes(fila.job_instagram_id, fila.network)) {
+    salida.push({ pieceId: hermana.id, network: hermana.network, result: await publishPiece(hermana.id) })
+  }
+  return salida
+}
+
+export const REDES_CARRUSEL = ["instagram", "facebook"]
+
+async function hermanasPendientes(job: string, salvo: string): Promise<{ id: string; network: string }[]> {
+  const { data } = await supabaseAdmin()
+    .from("content_pieces")
+    .select("id, network")
+    .eq("job_instagram_id", job)
+    .in("network", REDES_CARRUSEL.filter((r) => r !== salvo))
+    .in("status", ["generated", "approved"])
+    .is("published_at", null)
+  return (data ?? []) as { id: string; network: string }[]
+}
+
+/**
+ * Piezas de carrusel que se quedaron atras: su hermana ya salio pero ella no
+ * (fallo Facebook en el momento, por ejemplo). Se publican en la siguiente
+ * tanda, antes que nada, para que el desfase dure minutos y no se acumule.
+ */
+export async function hermanasAtrasadas(accountId: string): Promise<string[]> {
+  const supabase = supabaseAdmin()
+  const { data: pendientes } = await supabase
+    .from("content_pieces")
+    .select("id, job_instagram_id")
+    .eq("account_id", accountId)
+    .in("network", REDES_CARRUSEL)
+    .in("status", ["generated", "approved"])
+    .is("published_at", null)
+    .not("job_instagram_id", "is", null)
+  const lista = (pendientes ?? []) as { id: string; job_instagram_id: string }[]
+  if (lista.length === 0) return []
+
+  const { data: salidas } = await supabase
+    .from("content_pieces")
+    .select("job_instagram_id")
+    .in("job_instagram_id", [...new Set(lista.map((p) => p.job_instagram_id))])
+    .eq("status", "published")
+  const publicados = new Set(((salidas ?? []) as { job_instagram_id: string }[]).map((s) => s.job_instagram_id))
+  return lista.filter((p) => publicados.has(p.job_instagram_id)).map((p) => p.id)
+}
+
+/**
  * LinkedIn: texto mas la tarjeta con el titular.
  *
  * La imagen no es opcional. Antes, si algo fallaba al dibujarla o subirla, el

@@ -8,7 +8,7 @@ import { modelosClaude } from "../claude/modelos"
 import { elegirPorHecho } from "./repetidas"
 import { expirarPendientesViejas } from "./expiry"
 import { getSettings } from "../schedule"
-import { publishPiece, pendingToPublish } from "../publish/publish-piece"
+import { hermanasAtrasadas, pendingToPublish, publicarConHermanas, publishPiece } from "../publish/publish-piece"
 import { getPublishSchedules, marcarTanda } from "../publish/schedule"
 import { generarCarrusel, nichosConocidos, noticiaDelAngulo, parseInstagramResponse } from "../render/carousel"
 import { armarPublicacionFacebook } from "../render/facebook"
@@ -827,7 +827,21 @@ export async function runContentTick(
       // nueve" y no ser el mismo momento.
       const ajustes = await getSettings(cuenta.id)
 
+      // Facebook sigue a Instagram: el carrusel sale a las dos redes en la
+      // misma pasada (ver `publicarConHermanas`), asi que con Instagram activo
+      // Facebook no lleva cola propia. Solo publica por su cuenta si Instagram
+      // esta apagado en esta cuenta.
+      const instagramManda = (await ajustesDe(cuenta.id, "publicacion", "instagram")).enabled
+
+      // Lo que se quedo atras de un carrusel que ya salio en la otra red.
+      for (const atrasada of await hermanasAtrasadas(cuenta.id)) {
+        const result = await publishPiece(atrasada)
+        if (result.ok) piecesPublished++
+        else errors.push(result.error)
+      }
+
       for (const programa of await getPublishSchedules(cuenta.id)) {
+        if (programa.network === "facebook" && instagramManda) continue
         // El modo del agente de publicacion manda sobre el horario viejo: cada
         // canal puede estar en manual, programado o automatico por separado.
         const suyo = await ajustesDe(cuenta.id, "publicacion", programa.network)
@@ -844,22 +858,23 @@ export async function runContentTick(
         const decision = { motivo: turno.motivo }
 
         for (const pieza of piezas) {
-          const result = await publishPiece(pieza.id)
-          if (result.ok) {
-            piecesPublished++
-            log.emit("content.piece.published", `Pieza publicada en ${programa.network}`, {
-              accountId: cuenta.id,
-              pieceId: pieza.id,
-              urn: result.urn,
-              tanda: decision.motivo,
-            })
-          } else {
-            errors.push(result.error)
-            log.emit("content.publish.failed", "No se pudo publicar", {
-              accountId: cuenta.id,
-              pieceId: pieza.id,
-              error: result.error,
-            })
+          for (const { pieceId, network, result } of await publicarConHermanas(pieza.id)) {
+            if (result.ok) {
+              piecesPublished++
+              log.emit("content.piece.published", `Pieza publicada en ${network}`, {
+                accountId: cuenta.id,
+                pieceId,
+                urn: result.urn,
+                tanda: decision.motivo,
+              })
+            } else {
+              errors.push(result.error)
+              log.emit("content.publish.failed", "No se pudo publicar", {
+                accountId: cuenta.id,
+                pieceId,
+                error: result.error,
+              })
+            }
           }
         }
 

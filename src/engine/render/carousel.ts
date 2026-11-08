@@ -1,5 +1,6 @@
 import type { RawNews } from "@/lib/types"
 
+import { leerPagina } from "../redaccion/fuentes"
 import { supabaseAdmin } from "../supabase-admin"
 import { terminosDeBusqueda } from "./keywords"
 import { BancoDeFotos, descargarFotoPexels, pexelsConfigurado } from "./pexels"
@@ -342,11 +343,10 @@ export async function generarCarrusel(
   // unica lamina que no puede salir sin foto: es lo que frena el pulgar en el
   // feed, y una portada de solo texto sobre negro es un post que nadie abre.
   //
-  // Primero el banco, que da fotos grandes y distintas en cada post. Si no
-  // devuelve nada —sin clave de Pexels, red caida, terminos agotados— se recurre
-  // a la imagen de la noticia: es una miniatura de unos 300px y se ve mas
-  // blanda, pero una portada blanda es mejor que una portada vacia.
-  const fotoPortada = (await delBanco()) ?? (await descargarFoto(news?.image_url))
+  // Primero la foto del hecho (la misma de la nota del portal, ver
+  // `fotoDelHecho`); si no hay una grande, el banco; y como ultimo recurso la
+  // miniatura de la extraccion, que se ve blanda pero no deja la portada vacia.
+  const fotoPortada = (await fotoDelHecho(news)) ?? (await delBanco()) ?? (await descargarFoto(news?.image_url))
   const sinFotoPortada = fotoPortada === null
 
   // El antetitulo situa el post antes de que nadie lea el titular. Sale del tema
@@ -542,7 +542,7 @@ async function generarCarruselPlogy(
   for (const [i, slide] of slides.entries()) {
     const { composicion, fondo } = reparto[i]
     const necesitaFoto = composicion === "portada" || composicion === "foto"
-    const foto = necesitaFoto ? await fotoEnByN((await delBanco()) ?? (i === 0 ? await descargarFoto(news?.image_url) : null)) : null
+    const foto = necesitaFoto ? await fotoEnByN((i === 0 ? await fotoDelHecho(news) : null) ?? (await delBanco()) ?? (i === 0 ? await descargarFoto(news?.image_url) : null)) : null
     if (i === 0) fotoPortada = foto
     imagenes.push(
       await renderPlogy({
@@ -657,7 +657,7 @@ async function generarCarruselAlterno(
   const titularDe = (s: Slide) => (s.type === "photo_hook" ? (s.hook ?? "") : (s.title ?? ""))
   const reparto = repartirNoticia(Math.max(0, slides.length - 1), estilo.usarFotos && pexelsConfigurado())
 
-  const fotoPortada = (await delBanco()) ?? (await descargarFoto(news?.image_url))
+  const fotoPortada = (await fotoDelHecho(news)) ?? (await delBanco()) ?? (await descargarFoto(news?.image_url))
   // La fecha de la noticia, para el pie del estilo periodico ("28 de octubre de 2026").
   const fecha = new Date(news?.created_at ?? Date.now()).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Bogota" })
   const comun = { plantilla, nicho, fecha, total, logoClaro, logoOscuro, estilo, insertoForma, insertoAjuste, insertoPos } as const
@@ -694,5 +694,59 @@ async function generarCarruselAlterno(
     portadaSinFoto: fotoPortada === null,
     terminosFoto: terminos.slice(0, 6),
     creditos,
+  }
+}
+
+/**
+ * La foto del hecho para la portada: la misma que lleva la nota del portal.
+ *
+ * Al investigar la noticia para el portal se consigue la imagen principal del
+ * articulo original, que muestra lo que paso de verdad; una de banco solo lo
+ * sugiere. Se busca en este orden: la que ya guardo la redaccion, la que se leyo
+ * de la pagina de la noticia y, si la redaccion aun no ha llegado, la pagina
+ * misma (su og:image, que es lo que la redaccion va a usar). Tiene que ser
+ * grande: una miniatura estirada a 1080 se ve peor que una foto de banco.
+ */
+export async function fotoDelHecho(news: RawNews | null): Promise<string | null> {
+  if (!news?.id) return null
+  try {
+    const s = supabaseAdmin()
+    const [{ data: redaccion }, { data: fuente }] = await Promise.all([
+      s.from("news_redacciones").select("imagen_url").eq("raw_news_id", news.id).maybeSingle(),
+      s.from("news_sources").select("imagen").eq("raw_news_id", news.id).eq("origen", "noticia").not("imagen", "is", null).limit(1).maybeSingle(),
+    ])
+    const vistas = new Set<string>()
+    const probar = async (url: unknown) => {
+      if (typeof url !== "string" || vistas.has(url)) return null
+      vistas.add(url)
+      return fotoGrande(url)
+    }
+    return (
+      (await probar((redaccion as { imagen_url?: string } | null)?.imagen_url)) ??
+      (await probar((fuente as { imagen?: string } | null)?.imagen)) ??
+      (news.link ? await probar((await leerPagina(news.link))?.imagen) : null)
+    )
+  } catch {
+    return null
+  }
+}
+
+/** Baja una foto y la deja en JPEG si mide al menos 600 px de ancho. */
+async function fotoGrande(url: string): Promise<string | null> {
+  if (!/^https?:\/\//.test(url)) return null
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0 Safari/537.36", Accept: "image/*" },
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) return null
+    const sharp = (await import("sharp")).default
+    const img = sharp(Buffer.from(await res.arrayBuffer()))
+    const info = await img.metadata()
+    if (!info.width || info.width < 600) return null
+    const jpg = await img.rotate().resize({ width: 1600, withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 88 }).toBuffer()
+    return `data:image/jpeg;base64,${jpg.toString("base64")}`
+  } catch {
+    return null
   }
 }
