@@ -66,12 +66,25 @@ function storageR2() {
       try {
         const { aws, endpoint } = r2()
         const tipo = opciones?.contentType ?? "application/octet-stream"
-        const body = cuerpo instanceof Blob ? await cuerpo.arrayBuffer() : (cuerpo as BodyInit)
-        const r = await aws.fetch(`${endpoint}/${rutaObjeto(ruta)}`, {
+        // Bytes planos y la longitud explicita. Pasarle a fetch el Request que
+        // arma aws4fetch hacia que, dentro de Vercel, el cuerpo saliera como
+        // flujo sin Content-Length y R2 lo rechazaba (411 MissingContentLength).
+        const bytes: Uint8Array<ArrayBuffer> =
+          cuerpo instanceof Blob
+            ? new Uint8Array(await cuerpo.arrayBuffer())
+            : cuerpo instanceof ArrayBuffer
+              ? new Uint8Array(cuerpo)
+              : Uint8Array.from(cuerpo)
+        const firmado = await aws.sign(`${endpoint}/${rutaObjeto(ruta)}`, {
           method: "PUT",
-          body,
-          headers: { "Content-Type": tipo, "Cache-Control": "public, max-age=31536000" },
+          body: bytes,
+          headers: {
+            "Content-Type": tipo,
+            "Cache-Control": "public, max-age=31536000",
+            "Content-Length": String(bytes.byteLength),
+          },
         })
+        const r = await fetch(firmado.url, { method: "PUT", headers: firmado.headers, body: bytes, cache: "no-store" })
         if (!r.ok) return { data: null, error: { message: `R2 ${r.status}: ${(await r.text()).slice(0, 200)}` } }
         return { data: { path: ruta }, error: null }
       } catch (e) {
