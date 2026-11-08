@@ -94,8 +94,48 @@ export async function descargarInserto(url: string | null | undefined): Promise<
       bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
     if (!esJpeg && !esPng) return null
 
+    // Un PNG con fondo transparente (casi siempre un logo) dejaba ver la foto
+    // de fondo dentro del marco, y el borde quedaba rodeando un hueco. Se le
+    // pone fondo blanco: se recorta lo transparente sobrante y se centra en un
+    // cuadrado blanco con margen, para que el recorte del marco no lo corte.
+    if (esPng) {
+      const plano = await logoSobreBlanco(Buffer.from(bytes))
+      if (plano) return `data:image/png;base64,${plano.toString("base64")}`
+    }
+
     const tipo = esJpeg ? "image/jpeg" : "image/png"
     return `data:${tipo};base64,${Buffer.from(bytes).toString("base64")}`
+  } catch {
+    return null
+  }
+}
+
+/** Si el PNG tiene transparencia, lo devuelve centrado sobre un cuadrado blanco; si no, `null`. */
+async function logoSobreBlanco(png: Buffer): Promise<Buffer | null> {
+  try {
+    const sharp = (await import("sharp")).default
+    const meta = await sharp(png).metadata()
+    if (!meta.hasAlpha) return null
+    const { channels } = await sharp(png).ensureAlpha().stats()
+    // Sin pixeles de verdad transparentes no hay hueco que tapar.
+    if ((channels[3]?.min ?? 255) > 200) return null
+
+    const recortado = await sharp(png).trim().toBuffer({ resolveWithObject: true })
+    const { width: w, height: h } = recortado.info
+    // Margen holgado: en el circulo las esquinas del cuadrado se pierden.
+    const lado = Math.round(Math.max(w, h) * 1.45)
+    const blanco = { r: 255, g: 255, b: 255, alpha: 1 }
+    return await sharp(recortado.data)
+      .extend({
+        top: Math.floor((lado - h) / 2),
+        bottom: Math.ceil((lado - h) / 2),
+        left: Math.floor((lado - w) / 2),
+        right: Math.ceil((lado - w) / 2),
+        background: blanco,
+      })
+      .flatten({ background: blanco })
+      .png()
+      .toBuffer()
   } catch {
     return null
   }

@@ -467,7 +467,7 @@ export { MAX_SLIDES, MIN_SLIDES }
  * Se prueban las mas cuadradas primero: el hueco es cuadrado, y cuanto mas se
  * aleje la imagen de esa forma peor queda, se recorte o se encaje.
  */
-async function buscarInserto(
+export async function buscarInserto(
   consulta: string,
   accountId: string
 ): Promise<{ imagen: string; proporcion: number } | null> {
