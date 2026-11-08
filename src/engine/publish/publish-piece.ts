@@ -6,6 +6,7 @@ import { BancoDeFotos, descargarFotoPexels, pexelsConfigurado } from "../render/
 import { descargarFoto, renderTarjetaLinkedin } from "../render/render"
 import { estiloDesdeConfig } from "../render/theme"
 import type { RawNews } from "@/lib/types"
+import { linkDeLaNota } from "../content/desde-portal"
 import { publicarFacebook, publicarInstagram } from "./meta"
 import { buildCommentary, publishText, subirImagen, type PublishResult } from "./linkedin"
 
@@ -207,8 +208,11 @@ async function publicarCarrusel(piece: ContentPiece): Promise<PublishResult> {
     return { ok: false, error: "El carrusel no tiene imagenes." }
   }
 
-  const texto = [payload.caption, (payload.hashtags ?? []).join(" ")]
-    .filter((parte) => parte && parte.trim().length > 0)
+  // Instagram no deja links que se puedan tocar en el texto: se manda a la bio,
+  // que apunta al portal. Solo si la noticia tiene nota publicada.
+  const nota = await linkDeLaNota(piece.raw_news_id)
+  const texto = [payload.caption, nota ? "Lee la nota completa en el link de la bio." : null, (payload.hashtags ?? []).join(" ")]
+    .filter((parte): parte is string => !!parte && parte.trim().length > 0)
     .join("\n\n")
 
   const resultado = await publicarInstagram(piece.account_id, { texto, imagenes })
@@ -226,10 +230,13 @@ async function publicarEnFacebook(piece: ContentPiece): Promise<PublishResult> {
     return { ok: false, error: "La pieza de Facebook no tiene imagen." }
   }
 
-  const texto = buildCommentary(piece.payload)
-  if (!texto.trim()) {
+  const cuerpo = buildCommentary(piece.payload)
+  if (!cuerpo.trim()) {
     return { ok: false, error: "La pieza no tiene texto que publicar." }
   }
+  // El link directo a la nota del portal: en Facebook si se puede tocar.
+  const nota = await linkDeLaNota(piece.raw_news_id)
+  const texto = nota ? `${cuerpo}\n\nLee la nota completa: ${nota}` : cuerpo
 
   const resultado = await publicarFacebook(piece.account_id, { texto, imagenes: [imagen] })
   return resultado.ok ? { ok: true, urn: resultado.postId } : { ok: false, error: resultado.error }

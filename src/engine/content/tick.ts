@@ -7,7 +7,8 @@ import { leToca } from "../agents/turno"
 import { modelosClaude } from "../claude/modelos"
 import { elegirPorHecho } from "./repetidas"
 import { expirarPendientesViejas } from "./expiry"
-import { getSettings } from "../schedule"
+import { dayIn, getSettings, partsIn } from "../schedule"
+import { cuentasConPortal, encolarCarruselesDelPortal } from "./desde-portal"
 import { hermanasAtrasadas, pendingToPublish, publicarConHermanas, publishPiece } from "../publish/publish-piece"
 import { getPublishSchedules, marcarTanda } from "../publish/schedule"
 import { generarCarrusel, nichosConocidos, noticiaDelAngulo, parseInstagramResponse } from "../render/carousel"
@@ -85,6 +86,8 @@ const MARGEN_PARA_GENERAR = 30_000
 
 /** Tope de publicaciones por pasada: LinkedIn limita el ritmo y no hay prisa. */
 export const MAX_PUBLICAR_POR_TICK = 3
+/** Pasado este tiempo de la pasada ya no se empieza otro carrusel. */
+const MS_PARA_PUBLICAR = 35_000
 
 export type TickTrigger = "trigger" | "cron" | "manual" | "app"
 
@@ -202,6 +205,9 @@ export async function runContentTick(
   }
 
   const cuentas = await todasLasCuentas()
+  // Las cuentas con portal no eligen noticias para redes: su carrusel sale de
+  // la nota del portal (ver `desde-portal.ts`).
+  const conPortal = await cuentasConPortal(cuentas.map((c) => c.id))
   const esManual = trigger === "manual"
 
   // --------------------------------------------------------------- analisis
@@ -263,6 +269,21 @@ export async function runContentTick(
     }
   }
 
+  // ------------------------------------------------- carruseles del portal
+  //
+  // Cada nota ya publicada en el portal encola su carrusel (Instagram y
+  // Facebook). Barato, como el paso de abajo: va antes de drenar.
+  for (const cuenta of cuentas) {
+    if (!conPortal.has(cuenta.id)) continue
+    try {
+      if (!(await ajustesDe(cuenta.id, "instagram")).enabled) continue
+      const n = await encolarCarruselesDelPortal(cuenta.id, (await configDe(cuenta.id)).variables)
+      if (n > 0) log.emit("content.instagram.queued", `${n} carrusel(es) encolado(s) desde el portal`, { accountId: cuenta.id })
+    } catch (error) {
+      errors.push(`[${cuenta.slug}] portal: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   // ------------------------------------------- angulos que esperan contenido
   //
   // Va antes de drenar a proposito: encolar es una escritura y drenar es
@@ -281,6 +302,7 @@ export async function runContentTick(
   // corre solo. Es la misma decision de antes, pero tomada cada pasada en vez
   // de una sola vez.
   for (const cuenta of cuentas) {
+    if (conPortal.has(cuenta.id)) continue
     try {
       const redes = await redesQueGeneranSolas(cuenta.id)
       if (redes.length === 0) continue
@@ -700,6 +722,7 @@ export async function runContentTick(
   // cupo entero y las demas no arrancarian hasta que se quedara sin candidatas.
 
   for (const cuenta of cuentas) {
+    if (conPortal.has(cuenta.id)) continue
     const config = await configDe(cuenta.id)
     if (config.score_threshold === null) continue
 
@@ -848,16 +871,37 @@ export async function runContentTick(
         const aMano =
           forzados.has("publicacion") &&
           (!options.forzarCanal || options.forzarCanal === programa.network)
-        const turno = leToca(suyo, ajustes.timezone, new Date(), aMano ? "manual" : "auto")
-        if (!turno.corre) continue
+        const ahoraFecha = new Date()
+        const turno = leToca(suyo, ajustes.timezone, ahoraFecha, aMano ? "manual" : "auto")
 
-        const cuantas = suyo.batch_size ?? programa.batch_size
-        const piezas = await pendingToPublish(cuenta.id, programa.network, cuantas)
-        if (piezas.length === 0) continue
+        // Lo que se trae hoy sale hoy. El tamaño de la tanda se ajusta a lo
+        // que hay: lo pendiente se reparte entre los turnos que le quedan al
+        // dia. Y si el ultimo turno ya paso y aun queda algo de hoy (llego
+        // tarde de la redaccion), sale en esta misma pasada.
+        const pendientes = await pendingToPublish(cuenta.id, programa.network, 200)
+        if (pendientes.length === 0) continue
+        const { hour, minute } = partsIn(ajustes.timezone, ahoraFecha)
+        const ahora = hour * 60 + minute
+        const hoy = dayIn(ajustes.timezone, ahoraFecha)
+        const programado = suyo.enabled && suyo.mode === "programado" && suyo.run_at.length > 0
+        const deHoy = pendientes.filter((p) => dayIn(ajustes.timezone, new Date(p.created_at)) === hoy)
+        const tarde = programado && !turno.corre && ahora > Math.max(...suyo.run_at) && deHoy.length > 0
+        if (!turno.corre && !tarde) continue
 
-        const decision = { motivo: turno.motivo }
+        const base = suyo.batch_size ?? programa.batch_size
+        const restantes = programado ? suyo.run_at.filter((m) => m > ahora).length + 1 : 1
+        const cuantas = tarde ? deHoy.length : Math.max(base, Math.ceil(pendientes.length / restantes))
+        const piezas = (tarde ? deHoy : pendientes).slice(0, cuantas)
 
+        const decision = { motivo: tarde ? "Fuera de horario: sale lo que quedaba de hoy." : turno.motivo }
+
+        // Un carrusel con su hermana tarda unos 15 segundos y la pasada tiene 60:
+        // se publica mientras haya tiempo, y lo que quede de la tanda lo sigue
+        // la pasada siguiente (la tanda no se cierra hasta intentarlas todas).
+        let intentadas = 0
         for (const pieza of piezas) {
+          if (Date.now() - started.getTime() > MS_PARA_PUBLICAR) break
+          intentadas++
           for (const { pieceId, network, result } of await publicarConHermanas(pieza.id)) {
             if (result.ok) {
               piecesPublished++
@@ -877,6 +921,8 @@ export async function runContentTick(
             }
           }
         }
+
+        if (intentadas < piezas.length) continue
 
         // Se cierra la tanda aunque alguna haya fallado: reintentarla entera
         // cinco minutos despues republicaria las que si salieron.

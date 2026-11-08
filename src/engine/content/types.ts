@@ -69,6 +69,9 @@ export type JobLinkedin = {
   consumed_at: string | null
 }
 
+/** La nota del portal de la que sale el carrusel, en las cuentas con portal. */
+export type NotaDelPortal = { titular: string; texto: string; url: string }
+
 /** Fila de `public.jobs_instagram`. Mismo contrato que los otros buzones. */
 export type JobInstagram = {
   id: string
@@ -78,7 +81,7 @@ export type JobInstagram = {
    * `destinos` dice que piezas salen de la respuesta. Un trabajo viejo no lo
    * trae y se toma como solo Instagram.
    */
-  input: LinkedinJobInput & { destinos?: DestinoCarrusel[] }
+  input: LinkedinJobInput & { destinos?: DestinoCarrusel[]; nota?: NotaDelPortal }
   status: JobStatus
   respuesta: unknown
   error: string | null

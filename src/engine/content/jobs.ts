@@ -2,7 +2,7 @@ import type { RawNews } from "@/lib/types"
 
 import { supabaseAdmin } from "../supabase-admin"
 import { mergeVariables, parseVariables } from "./variables"
-import { REDES, type DestinoCarrusel } from "./types"
+import { REDES, type DestinoCarrusel, type NotaDelPortal } from "./types"
 import type {
   AngleJobInput,
   ContentAngle,
@@ -256,7 +256,9 @@ export async function enqueueInstagramJob(
   news: RawNews,
   variables: Variables,
   override?: Partial<Variables> | null,
-  destinos: DestinoCarrusel[] = ["instagram"]
+  destinos: DestinoCarrusel[] = ["instagram"],
+  /** En las cuentas con portal, la nota de la que se escribe el carrusel. */
+  nota?: NotaDelPortal
 ): Promise<string> {
   const supabase = supabaseAdmin()
 
@@ -290,7 +292,7 @@ export async function enqueueInstagramJob(
     .insert({
       account_id: angle.account_id,
       content_angle_id: angle.id,
-      input: { ...buildLinkedinInput(angle, news, mergeVariables(variables, override)), destinos },
+      input: { ...buildLinkedinInput(angle, news, mergeVariables(variables, override)), destinos, ...(nota ? { nota } : {}) },
     })
     .select("id")
     .single()

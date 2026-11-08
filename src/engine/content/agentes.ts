@@ -1,5 +1,5 @@
 import { llamarClaude, parsearJSONDeClaude, type UsoClaude } from "../claude/messages"
-import type { AngleJobInput, LinkedinJobInput, Variables } from "./types"
+import type { AngleJobInput, LinkedinJobInput, NotaDelPortal, Variables } from "./types"
 
 /**
  * Los agentes de contenido: angulo, LinkedIn e Instagram.
@@ -233,12 +233,24 @@ El array slides va en orden y tiene 5 elementos: el primero photo_hook, los otro
 
 export async function generarInstagram(
   accountId: string,
-  input: LinkedinJobInput,
+  input: LinkedinJobInput & { nota?: NotaDelPortal },
   model: string,
   system: string = INSTAGRAM_SYSTEM
 ): Promise<{ respuesta: unknown; uso: UsoClaude }> {
   const n = input.raw_news
-  const prompt = `ANGULO
+  // Con portal, el carrusel cuenta la nota ya investigada y redactada: trae
+  // las cifras confirmadas, el contexto y las fuentes que la noticia cruda no.
+  const prompt = input.nota
+    ? `NOTA DEL PORTAL (ya investigada y redactada; es la fuente de verdad del carrusel)
+- titular: ${input.nota.titular}
+
+${input.nota.texto}
+
+Escribe el carrusel a partir de esta nota: el hook con su dato más fuerte, y las láminas con lo que la nota explica. No agregues datos que no estén en la nota.
+
+VARIABLES
+${bloqueVariables(input.variables)}`
+    : `ANGULO
 - angulo: ${input.angle.angle}
 - tesis: ${input.angle.thesis ?? "(sin tesis)"}
 - formato: ${input.angle.playbook_format ?? "(sin formato)"}

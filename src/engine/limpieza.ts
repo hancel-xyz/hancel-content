@@ -43,13 +43,11 @@ export async function limpiarPublicados(): Promise<{ carpetas: number; archivos:
     archivos += rutas.length
   }
 
-  // La cola vieja: piezas generadas que nunca salieron. Una noticia de hace dos
-  // dias ya no se publica, y sus laminas ocupaban espacio para siempre (asi se
-  // lleno InsForge).
+  // La cola vieja del estudio: piezas generadas que nunca salieron ocupaban
+  // espacio para siempre (asi se lleno InsForge). Los carruseles de noticias no
+  // se descartan: todo lo que se redacta sale el mismo dia (ver el tick).
   const enCola = new Date(Date.now() - DIAS_EN_COLA * 86400_000).toISOString()
   {
-    const { error } = await s.from("content_pieces").update({ status: "rejected" }).in("status", ["generated", "approved"]).lt("created_at", enCola)
-    if (error) errores.push(`cola de noticias: ${error.message}`)
     const r = await s.from("studio_pieces").update({ status: "failed" }).eq("status", "generated").lt("created_at", enCola)
     if (r.error) errores.push(`cola del estudio: ${r.error.message}`)
   }
