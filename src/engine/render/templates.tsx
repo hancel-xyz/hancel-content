@@ -432,7 +432,9 @@ function Inserto({
           width: "100%",
           height: "100%",
           objectFit: ajuste === "llenar" ? "cover" : "contain",
-          borderRadius: ajuste === "llenar" ? redondeo : 0,
+          // Por dentro del aro de 8 px: con el redondeo del marco quedaban
+          // cuñas blancas en las esquinas.
+          borderRadius: ajuste === "llenar" ? Math.max(0, redondeo - 8) : 0,
         }}
       />
     </div>

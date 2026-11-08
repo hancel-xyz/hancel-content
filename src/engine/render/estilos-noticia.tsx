@@ -353,6 +353,8 @@ function Cabecera({ logo, acento, alto = 96 }: { logo: string | null; acento: st
  * sin tocar el titular. La imagen llena siempre la forma entera (se recorta si
  * hace falta): nada de margen ni fondo blanco alrededor.
  */
+const BORDE_INSERTO = 8
+
 function InsertoFoto({ l, acento, arriba, altoFoto }: { l: LaminaNoticia; acento: string; arriba: number; altoFoto: number }) {
   if (!l.inserto) return null
   const lado = 330
@@ -375,16 +377,21 @@ function InsertoFoto({ l, acento, arriba, altoFoto }: { l: LaminaNoticia; acento
         width: lado,
         height: lado,
         borderRadius: redondeo,
-        border: `8px solid ${acento}`,
+        border: `${BORDE_INSERTO}px solid ${acento}`,
+        // Blanco detras: si quedara alguna rendija, no asoma la foto de fondo.
+        background: "#FFFFFF",
       }}
     >
+      {/* La imagen va por dentro del aro: su redondeo es el del marco menos el
+          grosor del borde. Con el mismo redondeo que el marco quedaban cuñas
+          en las esquinas por donde se veia la foto. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={l.inserto}
         alt=""
-        width={lado}
-        height={lado}
-        style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: redondeo }}
+        width={lado - BORDE_INSERTO * 2}
+        height={lado - BORDE_INSERTO * 2}
+        style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: Math.max(0, redondeo - BORDE_INSERTO) }}
       />
     </div>
   )
