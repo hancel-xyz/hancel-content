@@ -243,5 +243,55 @@ AVISO: un intento anterior de esta noticia salio con ${redaccion.word_count} pal
     const distancia = (x: Redaccion) => Math.max(0, x.word_count - MAX_PALABRAS, MIN_PALABRAS - x.word_count)
     if (distancia(nueva) < distancia(redaccion)) redaccion = nueva
   }
+  if (redaccion.status === "ok") redaccion = await completarFuentesPorBloque(accountId, model, redaccion, entrada.fuentes)
   return { redaccion, uso }
+}
+
+/**
+ * Cada bloque de la nota (la entrada y cada seccion) tiene que decir que
+ * fuentes lo respaldan: el portal lo muestra como la marca al final del
+ * parrafo ("elheraldo.hn +1"). El agente a veces deja esa lista vacia aunque
+ * haya usado las fuentes. Aqui se le pide solo eso, sin tocar el texto, para
+ * los bloques que llegaron sin ella. Si la llamada falla, la nota sale igual.
+ */
+export async function completarFuentesPorBloque(
+  accountId: string,
+  model: string,
+  redaccion: Redaccion,
+  fuentes: Pick<FuenteEntrada, "id" | "medio" | "titulo" | "contenido">[]
+): Promise<Redaccion> {
+  const bloques = [redaccion.entrada, ...redaccion.secciones]
+  if (bloques.every((b) => b.fuentes.length > 0) || fuentes.length === 0) return redaccion
+
+  const validos = new Set(fuentes.map((f) => f.id))
+  const prompt = JSON.stringify(
+    {
+      bloques: bloques.map((b, i) => ({ n: i, texto: b.parrafos.join("\n") })),
+      fuentes: fuentes.map((f) => ({ id: f.id, medio: f.medio, titulo: f.titulo, contenido: f.contenido.slice(0, 2500) })),
+    },
+    null,
+    1
+  )
+  const r = await llamarClaude({
+    accountId,
+    model,
+    system:
+      'Recibes los bloques de una noticia ya escrita y las fuentes con las que se escribio. Para cada bloque, indica los id de las fuentes que respaldan sus datos, citas y cifras (al menos uno por bloque, el que mas aporta primero). No reescribas nada. RESPONDE SOLO con este JSON: {"bloques":[["f1","f3"],["f2"]]} con un arreglo por bloque, en el mismo orden.',
+    prompt,
+    maxTokens: 600,
+    timeoutMs: 60_000,
+  })
+  if (!r.ok) return redaccion
+  let asignadas: string[][]
+  try {
+    const o = parsearJSONDeClaude(r.texto) as { bloques?: unknown }
+    asignadas = (Array.isArray(o.bloques) ? o.bloques : []).map((x) => textos(x).filter((id) => validos.has(id)))
+  } catch {
+    return redaccion
+  }
+  const con = (b: { fuentes: string[] }, i: number) => (b.fuentes.length > 0 ? b.fuentes : (asignadas[i] ?? []))
+  const entrada = { ...redaccion.entrada, fuentes: con(redaccion.entrada, 0) }
+  const secciones = redaccion.secciones.map((s, i) => ({ ...s, fuentes: con(s, i + 1) }))
+  const usadas = [...new Set([...redaccion.fuentes_usadas, entrada.fuentes, ...secciones.map((s) => s.fuentes)].flat())]
+  return { ...redaccion, entrada, secciones, fuentes_usadas: usadas }
 }
