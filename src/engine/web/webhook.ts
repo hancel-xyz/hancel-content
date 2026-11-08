@@ -3,6 +3,7 @@ import crypto from "node:crypto"
 import type { Redaccion } from "../redaccion/agente"
 import { secretosDe } from "../secretos"
 import { supabaseAdmin } from "../supabase-admin"
+import { PORTADA_ALTO, PORTADA_ANCHO } from "./portada"
 
 /**
  * El envio de noticias redactadas al portal de noticias de cada empresa.
@@ -16,6 +17,8 @@ import { supabaseAdmin } from "../supabase-admin"
  * - `noticia.actualizada` si se vuelve a redactar una ya enviada: mismo
  *   `noticia.id` y `slug`, `version` siguiente, y el portal edita la que tiene;
  * - `noticia.retirada` si se descarta una ya enviada;
+ * - `noticia.portada` cuando su carrusel sale en Instagram: la portada
+ *   comprimida, para la pagina de enlaces del portal (ver `portada.ts`);
  * - `ping` desde el boton "Enviar prueba".
  *
  * Un envio que falla se reintenta con esperas crecientes durante 24 horas (8
@@ -30,7 +33,7 @@ const ESPERAS_MIN = [1, 5, 30, 120, 360, 720, 1440]
 const PERMANENTES = new Set([400, 401, 403, 404, 410, 422])
 const TIMEOUT_MS = 15_000
 
-export type TipoEvento = "noticia.publicada" | "noticia.actualizada" | "noticia.retirada" | "ping"
+export type TipoEvento = "noticia.publicada" | "noticia.actualizada" | "noticia.retirada" | "noticia.portada" | "ping"
 
 // ----------------------------------------------------------------- conexion
 
@@ -275,7 +278,6 @@ export async function procesarWeb(accountId: string, limite = 6): Promise<Resume
     .order("redactada_at", { ascending: true })
     .limit(limite)
   const filas = (data ?? []) as FilaRedaccion[]
-  if (filas.length === 0) return resumen
   const empresa = await empresaDe(accountId)
 
   for (const fila of filas) {
@@ -374,7 +376,85 @@ export async function procesarWeb(accountId: string, limite = 6): Promise<Resume
       resumen.errores.push(`${fila.titular?.slice(0, 60)}: ${r.error}`)
     }
   }
+
+  await enviarPortadas(conexion, accountId, empresa, resumen, limite)
   return resumen
+}
+
+type FilaPortada = {
+  id: string
+  raw_news_id: string
+  slug: string | null
+  portada_url: string
+  portada_publicada_at: string | null
+  portada_status: string
+  portada_intentos: number
+}
+
+/**
+ * Las portadas pendientes (o que fallaron y ya les toca reintento). Solo las de
+ * notas que ya estan en el portal; un 409 (el portal aun no tiene la nota) se
+ * reintenta como cualquier fallo pasajero.
+ */
+async function enviarPortadas(conexion: ConexionWeb, accountId: string, empresa: Empresa, resumen: ResumenWeb, limite: number): Promise<void> {
+  const supabase = supabaseAdmin()
+  const ahora = new Date().toISOString()
+  const { data } = await supabase
+    .from("news_redacciones")
+    .select("id, raw_news_id, slug, portada_url, portada_publicada_at, portada_status, portada_intentos")
+    .eq("account_id", accountId)
+    .eq("web_status", "enviada")
+    .not("portada_url", "is", null)
+    .or(`portada_status.eq.pendiente,and(portada_status.eq.error,portada_intentos.lt.${MAX_INTENTOS},portada_proximo_at.lte.${ahora})`)
+    .order("portada_publicada_at", { ascending: true })
+    .limit(limite)
+
+  for (const fila of (data ?? []) as FilaPortada[]) {
+    const tipo: TipoEvento = "noticia.portada"
+    const eventoId = idEvento(fila.id, tipo, Date.parse(fila.portada_publicada_at ?? "") || 0)
+    const intento = fila.portada_status === "error" ? fila.portada_intentos + 1 : 1
+    const evento = {
+      evento: { id: eventoId, tipo, creado_at: new Date().toISOString(), version_esquema: VERSION_ESQUEMA },
+      empresa,
+      noticia: { id: fila.raw_news_id, slug: fila.slug },
+      portada: { url: fila.portada_url, ancho: PORTADA_ANCHO, alto: PORTADA_ALTO, publicada_at: fila.portada_publicada_at },
+    }
+    const r = await enviar(conexion, tipo, eventoId, intento, evento)
+    await supabase.from("web_entregas").insert({
+      account_id: accountId,
+      redaccion_id: fila.id,
+      evento_id: eventoId,
+      tipo,
+      intento,
+      status_code: r.status,
+      respuesta: r.cuerpo.slice(0, 2000),
+      error: r.error,
+      ms: r.ms,
+    })
+
+    if (r.ok) {
+      await supabase
+        .from("news_redacciones")
+        .update({ portada_status: "enviada", portada_error: null, portada_proximo_at: null })
+        .eq("id", fila.id)
+      resumen.enviadas++
+    } else {
+      const permanente = r.status !== null && PERMANENTES.has(r.status)
+      const agotado = permanente || intento >= MAX_INTENTOS
+      const esperaMin = r.retryAfter ? Math.ceil(r.retryAfter / 60) : ESPERAS_MIN[Math.min(intento - 1, ESPERAS_MIN.length - 1)]
+      await supabase
+        .from("news_redacciones")
+        .update({
+          portada_status: "error",
+          portada_intentos: agotado ? MAX_INTENTOS : intento,
+          portada_error: (r.error ?? "").slice(0, 500),
+          portada_proximo_at: agotado ? null : new Date(Date.now() + esperaMin * 60_000).toISOString(),
+        })
+        .eq("id", fila.id)
+      resumen.fallidas++
+      resumen.errores.push(`Portada ${fila.slug ?? fila.raw_news_id}: ${r.error}`)
+    }
+  }
 }
 
 /** El `ping` del boton "Enviar prueba": verifica que el portal recibe y valida la firma. */

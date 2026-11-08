@@ -7,6 +7,7 @@ import { descargarFoto, renderTarjetaLinkedin } from "../render/render"
 import { estiloDesdeConfig } from "../render/theme"
 import type { RawNews } from "@/lib/types"
 import { linkDeLaNota } from "../content/desde-portal"
+import { prepararPortadaWeb } from "../web/portada"
 import { publicarFacebook, publicarInstagram } from "./meta"
 import { buildCommentary, publishText, subirImagen, type PublishResult } from "./linkedin"
 
@@ -123,6 +124,17 @@ export async function publicarConHermanas(
 
   for (const hermana of await hermanasPendientes(fila.job_instagram_id, fila.network)) {
     salida.push({ pieceId: hermana.id, network: hermana.network, result: await publishPiece(hermana.id) })
+  }
+
+  // La portada para la pagina de enlaces del portal. Lo publicado ya salio:
+  // un fallo aqui solo se registra.
+  const instagram = salida.find((s) => s.network === "instagram" && s.result.ok)
+  if (instagram) {
+    try {
+      await prepararPortadaWeb(instagram.pieceId)
+    } catch (e) {
+      console.error("[portada portal]", instagram.pieceId, e instanceof Error ? e.message : e)
+    }
   }
   return salida
 }
