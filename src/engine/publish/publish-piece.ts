@@ -8,7 +8,7 @@ import { estiloDesdeConfig } from "../render/theme"
 import type { RawNews } from "@/lib/types"
 import { linkDeLaNota } from "../content/desde-portal"
 import { prepararPortadaWeb } from "../web/portada"
-import { publicarFacebook, publicarInstagram } from "./meta"
+import { comentarFacebook, publicarFacebook, publicarInstagram } from "./meta"
 import { buildCommentary, publishText, subirImagen, type PublishResult } from "./linkedin"
 
 /**
@@ -246,12 +246,17 @@ async function publicarEnFacebook(piece: ContentPiece): Promise<PublishResult> {
   if (!cuerpo.trim()) {
     return { ok: false, error: "La pieza no tiene texto que publicar." }
   }
-  // El link directo a la nota del portal: en Facebook si se puede tocar.
-  const nota = await linkDeLaNota(piece.raw_news_id)
-  const texto = nota ? `${cuerpo}\n\nLee la nota completa: ${nota}` : cuerpo
+  const resultado = await publicarFacebook(piece.account_id, { texto: cuerpo, imagenes: [imagen] })
+  if (!resultado.ok) return { ok: false, error: resultado.error }
 
-  const resultado = await publicarFacebook(piece.account_id, { texto, imagenes: [imagen] })
-  return resultado.ok ? { ok: true, urn: resultado.postId } : { ok: false, error: resultado.error }
+  // El link a la nota del portal va en el primer comentario, no en el texto.
+  // El post ya salio: si comentar falla se registra, pero no se republica.
+  const nota = await linkDeLaNota(piece.raw_news_id)
+  if (nota && resultado.postId && resultado.postId !== "publicado") {
+    const comentario = await comentarFacebook(piece.account_id, resultado.postId, `Lee la nota completa: ${nota}`)
+    if (!comentario.ok) console.error("[facebook] no se pudo comentar el link", piece.id, comentario.error)
+  }
+  return { ok: true, urn: resultado.postId }
 }
 
 /**

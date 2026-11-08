@@ -87,6 +87,32 @@ export async function publicarFacebook(
   return { ok: true, postId: idDe(r.data) ?? "publicado" }
 }
 
+/**
+ * Deja un comentario en un post de la pagina (el link a la nota va en el
+ * primer comentario, no en el texto: asi el post no se lee como publicidad).
+ *
+ * Si el post ya tiene un comentario con ese mismo texto no lo repite, para que
+ * un reintento no deje dos. Un post recien creado a veces tarda en aceptar
+ * comentarios: se reintenta una vez.
+ */
+export async function comentarFacebook(accountId: string, postId: string, mensaje: string): Promise<ResultadoPublicacion> {
+  const existentes = await ejecutar(accountId, "facebook", "FACEBOOK_GET_COMMENTS", { object_id: postId, limit: 25, fields: "id,message" }, 30_000)
+  if (existentes.ok) {
+    const lista = ((existentes.data as { data?: { id: string; message?: string }[] }).data ?? [])
+    const igual = lista.find((c) => c.message?.trim() === mensaje.trim())
+    if (igual) return { ok: true, postId: igual.id }
+  }
+
+  let ultimo: ResultadoPublicacion = { ok: false, error: "No se pudo comentar." }
+  for (let intento = 0; intento < 2; intento++) {
+    if (intento > 0) await new Promise((r) => setTimeout(r, 3000))
+    const r = await ejecutar(accountId, "facebook", "FACEBOOK_CREATE_COMMENT", { object_id: postId, message: mensaje }, 30_000)
+    if (r.ok) return { ok: true, postId: idDe(r.data) ?? "comentado" }
+    ultimo = r
+  }
+  return ultimo
+}
+
 // ----------------------------------------------------------------- instagram
 
 /** La cuenta de Instagram conectada (id y usuario); se guarda la primera vez. */
