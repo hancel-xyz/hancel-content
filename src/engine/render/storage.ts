@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "../supabase-admin"
 
 /**
- * Sube las imagenes del carrusel a Supabase Storage.
+ * Sube las imagenes del carrusel al almacenamiento (Cloudflare R2).
  *
  * El bucket es publico a proposito: al publicar, Instagram descarga cada imagen
  * desde sus propios servidores, asi que una URL firmada y efimera no le vale.
@@ -9,6 +9,17 @@ import { supabaseAdmin } from "../supabase-admin"
  */
 
 export const BUCKET = "carousels"
+
+/**
+ * Las laminas se guardan en JPEG, no en PNG: pesan unas cinco veces menos, y
+ * es lo unico que Instagram acepta en un carrusel, asi que ya no hace falta
+ * una segunda copia en JPEG al publicar. Calidad 90 con mozjpeg: el texto
+ * sigue nitido.
+ */
+async function aJpeg(png: Buffer): Promise<Buffer> {
+  const sharp = (await import("sharp")).default
+  return sharp(png).flatten({ background: "#ffffff" }).jpeg({ quality: 90, mozjpeg: true }).toBuffer()
+}
 
 /** El orden del array ES el orden del carrusel, y no se puede perder. */
 export async function subirCarrusel(
@@ -28,10 +39,10 @@ export async function subirCarrusel(
     // El numero va con cero delante para que ordenar por nombre en el panel de
     // Supabase coincida con el orden real del carrusel.
     const numero = String(indice + 1).padStart(2, "0")
-    const ruta = `${pieceKey}/${numero}.png`
+    const ruta = `${pieceKey}/${numero}.jpg`
 
-    const { error } = await supabase.storage.from(BUCKET).upload(ruta, png, {
-      contentType: "image/png",
+    const { error } = await supabase.storage.from(BUCKET).upload(ruta, await aJpeg(png), {
+      contentType: "image/jpeg",
       // Regenerar un carrusel reescribe sus imagenes en vez de acumular basura.
       upsert: true,
     })
@@ -58,10 +69,10 @@ export async function subirImagenSuelta(
   png: Buffer
 ): Promise<string> {
   const supabase = supabaseAdmin()
-  const ruta = `${pieceKey}/${nombre}.png`
+  const ruta = `${pieceKey}/${nombre}.jpg`
 
-  const { error } = await supabase.storage.from(BUCKET).upload(ruta, png, {
-    contentType: "image/png",
+  const { error } = await supabase.storage.from(BUCKET).upload(ruta, await aJpeg(png), {
+    contentType: "image/jpeg",
     upsert: true,
   })
   if (error) throw new Error(`No se pudo subir ${nombre}: ${error.message}`)

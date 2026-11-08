@@ -59,7 +59,7 @@ export async function GET(request: Request) {
     imagenes.map(async (url, indice) => {
       const response = await fetch(url)
       if (!response.ok) return null
-      return { indice, bytes: await response.arrayBuffer() }
+      return { indice, bytes: await response.arrayBuffer(), ext: /\.jpe?g(\?|$)/i.test(url) ? "jpg" : "png" }
     })
   )
 
@@ -67,7 +67,7 @@ export async function GET(request: Request) {
     if (!descarga) continue
     // Numerado con cero delante para que el orden del carrusel sobreviva al
     // ordenar por nombre en cualquier explorador de archivos.
-    zip.file(`${String(descarga.indice + 1).padStart(2, "0")}.png`, descarga.bytes)
+    zip.file(`${String(descarga.indice + 1).padStart(2, "0")}.${descarga.ext}`, descarga.bytes)
   }
 
   // El texto viaja con las imagenes: al publicar hace falta el pie, no solo las

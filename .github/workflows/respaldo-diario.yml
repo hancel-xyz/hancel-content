@@ -1,0 +1,58 @@
+# Respaldo diario de la base (Supabase) en Cloudflare R2.
+#
+# Supabase en plan gratis no deja descargar respaldos, y ya nos paso dos veces
+# que un proveedor detuvo el proyecto con los datos adentro. Esto saca una copia
+# completa cada dia (esquema, datos y usuarios) y la guarda en el bucket privado
+# hancel-respaldos. Se conservan los ultimos 14 dias.
+#
+# Secretos del repositorio que necesita (Settings > Secrets and variables > Actions):
+#   SUPABASE_DB_URL, R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
+
+name: Respaldo diario
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # 03:00 en Colombia
+  workflow_dispatch: {}
+
+jobs:
+  respaldo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      BUCKET: hancel-respaldos
+    steps:
+      - name: Cliente de Postgres 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+
+      - name: Copia de la base
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          FECHA=$(date -u +%Y-%m-%d)
+          # public (todo el motor) y auth (usuarios y contraseñas).
+          /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges \
+            --schema=public --schema=auth -Fc -f "hancel-$FECHA.dump"
+          ls -la "hancel-$FECHA.dump"
+          aws s3 cp "hancel-$FECHA.dump" "s3://$BUCKET/hancel-$FECHA.dump" --endpoint-url "$ENDPOINT"
+
+      - name: Borrar copias de mas de 14 dias
+        run: |
+          set -euo pipefail
+          LIMITE=$(date -u -d "14 days ago" +%Y-%m-%d)
+          aws s3 ls "s3://$BUCKET/" --endpoint-url "$ENDPOINT" | awk '{print $4}' | while read -r f; do
+            d=$(echo "$f" | sed -nE 's/^hancel-([0-9-]{10})\.dump$/\1/p')
+            if [ -n "$d" ] && [ "$d" \< "$LIMITE" ]; then
+              aws s3 rm "s3://$BUCKET/$f" --endpoint-url "$ENDPOINT"
+            fi
+          done

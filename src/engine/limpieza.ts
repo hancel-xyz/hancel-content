@@ -5,11 +5,14 @@ const BUCKET = "carousels"
 const DIAS = 0
 /** Lo que nunca se publico (descartado, fallido): se borra pasado un dia. */
 const DIAS_SIN_PUBLICAR = 1
+/** Lo que lleva mas de esto en cola sin publicarse ya es prensa vieja: se descarta. */
+const DIAS_EN_COLA = 2
 /** Carpetas por pasada: la limpieza no debe comerse el tiempo del tick. */
 const POR_PASADA = 25
 
 /**
- * Borra las imagenes de lo que ya se publico.
+ * Borra las imagenes de lo que ya se publico, y saca de la cola lo que se quedo
+ * esperando mas de dos dias (sus archivos se borran en la pasada siguiente).
  *
  * Instagram y Facebook guardan su propia copia al publicar, asi que las
  * laminas (PNG), su copia en JPEG y el HTML del Estudio dejan de hacer falta.
@@ -38,6 +41,17 @@ export async function limpiarPublicados(): Promise<{ carpetas: number; archivos:
       if (r.error) throw new Error(r.error.message)
     }
     archivos += rutas.length
+  }
+
+  // La cola vieja: piezas generadas que nunca salieron. Una noticia de hace dos
+  // dias ya no se publica, y sus laminas ocupaban espacio para siempre (asi se
+  // lleno InsForge).
+  const enCola = new Date(Date.now() - DIAS_EN_COLA * 86400_000).toISOString()
+  {
+    const { error } = await s.from("content_pieces").update({ status: "rejected" }).in("status", ["generated", "approved"]).lt("created_at", enCola)
+    if (error) errores.push(`cola de noticias: ${error.message}`)
+    const r = await s.from("studio_pieces").update({ status: "failed" }).eq("status", "generated").lt("created_at", enCola)
+    if (r.error) errores.push(`cola del estudio: ${r.error.message}`)
   }
 
   // Noticias: por carrusel (job de Instagram), cuando todas sus piezas salieron.

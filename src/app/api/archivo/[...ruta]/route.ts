@@ -1,11 +1,12 @@
+import { urlPublicaR2 } from "@/engine/supabase-admin"
+
 /**
- * Los archivos publicos del bucket `carousels`, servidos desde la app.
+ * Los archivos publicos, servidos desde la app.
  *
- * El storage de InsForge responde a la URL publica con una redireccion (302) a
- * una URL firmada de su CDN, y entrega los .html como application/octet-stream.
- * Canva no sigue esa redireccion ni importa un HTML que no sea text/html, y no
- * conviene apostar a que Meta o el portal la sigan. Esta ruta responde directo
- * (200) con el tipo correcto y deja que el CDN de Vercel la cachee.
+ * Hoy viven en Cloudflare R2 y se enlazan directo con su URL publica. Esta ruta
+ * queda para los enlaces viejos con /api/archivo/... (los de la epoca de
+ * InsForge): responde directo (200) con el tipo correcto, que es lo que Canva
+ * necesita para importar el HTML de una pieza.
  */
 const TIPOS: Record<string, string> = {
   png: "image/png",
@@ -22,8 +23,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ruta: s
   const { ruta } = await params
   const clave = ruta.map((t) => decodeURIComponent(t)).join("/")
   if (!clave || clave.includes("..")) return new Response("No encontrado", { status: 404 })
-  const base = (process.env.INSFORGE_URL ?? process.env.NEXT_PUBLIC_INSFORGE_URL ?? "").replace(/\/$/, "")
-  const r = await fetch(`${base}/api/storage/buckets/carousels/objects/${clave.split("/").map(encodeURIComponent).join("/")}`, { cache: "no-store" })
+  const r = await fetch(urlPublicaR2(clave), { cache: "no-store" })
   if (!r.ok || !r.body) return new Response("No encontrado", { status: 404 })
 
   const ext = /\.([a-z0-9]+)$/i.exec(clave)?.[1]?.toLowerCase() ?? ""

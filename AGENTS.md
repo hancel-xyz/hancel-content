@@ -9,22 +9,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 <!-- END:nextjs-agent-rules -->
 
 <!-- INSFORGE:START -->
-## InsForge backend
+## Backend: Supabase + Cloudflare R2
 
-This project uses [InsForge](https://insforge.dev): an all-in-one, open-source Postgres-based backend (BaaS) that gives this app a database, authentication, file storage, edge functions, realtime, an AI model gateway, and payments through one platform.
-
-- **Project:** **oss-project** (API base `https://66h2s8n9.us-east.insforge.app`)
-- **Skills:** these InsForge skills are installed for supported coding agents. Reach for them before implementing any InsForge feature instead of guessing the API:
-  - `insforge`: app code with the `@insforge/sdk` client (database CRUD, auth, storage, edge functions, realtime, AI, email, and Stripe payments).
-  - `insforge-cli`: backend and infrastructure via the `insforge` CLI (projects, SQL, migrations, RLS policies, storage buckets, functions, secrets, payment setup, schedules, deploys).
-  - `insforge-debug`: diagnosing failures (SDK/HTTP errors, RLS denials, auth and OAuth issues) and running security or performance audits.
-  - `insforge-integrations`: wiring external auth providers (Clerk, Auth0, WorkOS, Better Auth, etc.) for JWT-based RLS, or the OKX x402 payment facilitator.
-  - `find-skills`: discovering additional skills on demand.
-- **Credentials:** app code reads keys from `.env.local`; the CLI reads `.insforge/project.json`. Never hardcode or commit keys.
-
-Key patterns:
-
-- Database inserts take an array: `insert([{ ... }])`.
-- Reference users with `auth.users(id)`; use `auth.uid()` in RLS policies.
-- For storage uploads, persist both the returned `url` and `key`.
-<!-- INSFORGE:END -->
+- **Base de datos y autenticacion:** Supabase (proyecto `fmwnorumatylixgmoqzu`, plan gratis). El motor usa `supabaseAdmin()` (`src/engine/supabase-admin.ts`) con la secret key; la sesion del panel usa `@supabase/ssr` con la publishable key.
+- **Archivos:** Cloudflare R2, bucket `hancel-media` (publico). El codigo sigue usando `supabaseAdmin().storage.from(...)`, que `supabase-admin.ts` traduce a R2. No usar el storage de Supabase: su salida de datos se agota en el plan gratis.
+- **Tareas programadas:** pg_cron + pg_net en Supabase llaman a las rutas `/api/*/tick` con `INGEST_SECRET` (URL y secreto en Vault: `configure_content_tick`, `configure_ingest`).
+- **Respaldo:** `.github/workflows/respaldo-diario.yml` guarda cada dia un `pg_dump` en el bucket privado `hancel-respaldos` (14 dias).
+- **Credenciales:** en `.env.local` (nunca en git). Nunca escribirlas en el codigo.
