@@ -14,6 +14,7 @@ import {
   renderSlide,
   repartirVariantes,
 } from "./render"
+import { estamparCredito } from "./credito"
 import { subirCarrusel, subirImagenSuelta } from "./storage"
 import type { Slide } from "./templates"
 import { ESTILO_POR_DEFECTO, type Estilo } from "./theme"
@@ -346,7 +347,8 @@ export async function generarCarrusel(
   // Primero la foto del hecho (la misma de la nota del portal, ver
   // `fotoDelHecho`); si no hay una grande, el banco; y como ultimo recurso la
   // miniatura de la extraccion, que se ve blanda pero no deja la portada vacia.
-  const fotoPortada = (await fotoDelHecho(news)) ?? (await delBanco()) ?? (await descargarFoto(news?.image_url))
+  const hecho = await fotoDelHecho(news)
+  const fotoPortada = hecho?.foto ?? (await delBanco()) ?? (await descargarFoto(news?.image_url))
   const sinFotoPortada = fotoPortada === null
 
   // El antetitulo situa el post antes de que nadie lea el titular. Sale del tema
@@ -383,6 +385,8 @@ export async function generarCarrusel(
     )
   }
 
+  // La foto de prensa lleva su credito; la de banco no lo necesita.
+  if (hecho && imagenes[0]) imagenes[0] = await estamparCredito(imagenes[0], hecho.medio, estilo)
   const images = await subirCarrusel(pieceKey, imagenes)
 
   // La de Facebook se dibuja aparte y con la misma foto: total 1 y sin
@@ -407,7 +411,7 @@ export async function generarCarrusel(
       1,
       { ...estilo, mostrarPaginacion: false }
     )
-    portadaFacebook = await subirImagenSuelta(pieceKey, "facebook", png)
+    portadaFacebook = await subirImagenSuelta(pieceKey, "facebook", hecho ? await estamparCredito(png, hecho.medio, estilo) : png)
   }
 
   return {
@@ -539,10 +543,11 @@ async function generarCarruselPlogy(
 
   const imagenes: Buffer[] = []
   let fotoPortada: string | null = null
+  const hecho = await fotoDelHecho(news)
   for (const [i, slide] of slides.entries()) {
     const { composicion, fondo } = reparto[i]
     const necesitaFoto = composicion === "portada" || composicion === "foto"
-    const foto = necesitaFoto ? await fotoEnByN((i === 0 ? await fotoDelHecho(news) : null) ?? (await delBanco()) ?? (i === 0 ? await descargarFoto(news?.image_url) : null)) : null
+    const foto = necesitaFoto ? await fotoEnByN((i === 0 ? hecho?.foto : null) ?? (await delBanco()) ?? (i === 0 ? await descargarFoto(news?.image_url) : null)) : null
     if (i === 0) fotoPortada = foto
     imagenes.push(
       await renderPlogy({
@@ -580,6 +585,8 @@ async function generarCarruselPlogy(
     })
   )
 
+  // La foto de prensa lleva su credito; la de banco no lo necesita.
+  if (hecho && imagenes[0]) imagenes[0] = await estamparCredito(imagenes[0], hecho.medio, estilo)
   const images = await subirCarrusel(pieceKey, imagenes)
   let portadaFacebook: string | undefined
   if (conPortadaFacebook && slides[0]) {
@@ -596,7 +603,7 @@ async function generarCarruselPlogy(
       logoClaro,
       logoOscuro,
     })
-    portadaFacebook = await subirImagenSuelta(pieceKey, "facebook", png)
+    portadaFacebook = await subirImagenSuelta(pieceKey, "facebook", hecho ? await estamparCredito(png, hecho.medio, estilo) : png)
   }
 
   return {
@@ -657,7 +664,8 @@ async function generarCarruselAlterno(
   const titularDe = (s: Slide) => (s.type === "photo_hook" ? (s.hook ?? "") : (s.title ?? ""))
   const reparto = repartirNoticia(Math.max(0, slides.length - 1), estilo.usarFotos && pexelsConfigurado())
 
-  const fotoPortada = (await fotoDelHecho(news)) ?? (await delBanco()) ?? (await descargarFoto(news?.image_url))
+  const hecho = await fotoDelHecho(news)
+  const fotoPortada = hecho?.foto ?? (await delBanco()) ?? (await descargarFoto(news?.image_url))
   // La fecha de la noticia, para el pie del estilo periodico ("28 de octubre de 2026").
   const fecha = new Date(news?.created_at ?? Date.now()).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Bogota" })
   const comun = { plantilla, nicho, fecha, total, logoClaro, logoOscuro, estilo, insertoForma, insertoAjuste, insertoPos } as const
@@ -678,11 +686,13 @@ async function generarCarruselAlterno(
   }
   imagenes.push(await renderNoticia({ ...comun, composicion: "cierre", titular: estilo.cierre.titulo, cuerpo: estilo.cierre.texto, n: total }))
 
+  // La foto de prensa lleva su credito; la de banco no lo necesita.
+  if (hecho && imagenes[0]) imagenes[0] = await estamparCredito(imagenes[0], hecho.medio, estilo)
   const images = await subirCarrusel(pieceKey, imagenes)
   let portadaFacebook: string | undefined
   if (conPortadaFacebook && slides[0]) {
     const png = await renderNoticia({ ...comun, composicion: "portada", titular: titularDe(slides[0]), foto: fotoPortada, inserto: hallado?.imagen ?? null, n: 1, total: 1 })
-    portadaFacebook = await subirImagenSuelta(pieceKey, "facebook", png)
+    portadaFacebook = await subirImagenSuelta(pieceKey, "facebook", hecho ? await estamparCredito(png, hecho.medio, estilo) : png)
   }
 
   return {
@@ -707,25 +717,29 @@ async function generarCarruselAlterno(
  * misma (su og:image, que es lo que la redaccion va a usar). Tiene que ser
  * grande: una miniatura estirada a 1080 se ve peor que una foto de banco.
  */
-export async function fotoDelHecho(news: RawNews | null): Promise<string | null> {
+export async function fotoDelHecho(news: RawNews | null): Promise<{ foto: string; medio: string | null } | null> {
   if (!news?.id) return null
   try {
     const s = supabaseAdmin()
     const [{ data: redaccion }, { data: fuente }] = await Promise.all([
-      s.from("news_redacciones").select("imagen_url").eq("raw_news_id", news.id).maybeSingle(),
-      s.from("news_sources").select("imagen").eq("raw_news_id", news.id).eq("origen", "noticia").not("imagen", "is", null).limit(1).maybeSingle(),
+      s.from("news_redacciones").select("imagen_url, imagen_credito").eq("raw_news_id", news.id).maybeSingle(),
+      s.from("news_sources").select("imagen, medio").eq("raw_news_id", news.id).eq("origen", "noticia").limit(1).maybeSingle(),
     ])
+    const r = redaccion as { imagen_url?: string; imagen_credito?: { medio?: string | null } | null } | null
+    const f = fuente as { imagen?: string | null; medio?: string | null } | null
     const vistas = new Set<string>()
-    const probar = async (url: unknown) => {
+    const probar = async (url: unknown, medio: string | null | undefined) => {
       if (typeof url !== "string" || vistas.has(url)) return null
       vistas.add(url)
-      return fotoGrande(url)
+      const foto = await fotoGrande(url)
+      return foto ? { foto, medio: medio || f?.medio || news.source || null } : null
     }
-    return (
-      (await probar((redaccion as { imagen_url?: string } | null)?.imagen_url)) ??
-      (await probar((fuente as { imagen?: string } | null)?.imagen)) ??
-      (news.link ? await probar((await leerPagina(news.link))?.imagen) : null)
-    )
+    const deRedaccion = await probar(r?.imagen_url, r?.imagen_credito?.medio)
+    if (deRedaccion) return deRedaccion
+    const deFuente = await probar(f?.imagen, f?.medio)
+    if (deFuente || !news.link) return deFuente
+    const pagina = await leerPagina(news.link)
+    return await probar(pagina?.imagen, pagina?.medio)
   } catch {
     return null
   }
