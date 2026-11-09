@@ -27,13 +27,13 @@ const PERIODOS: { id: Periodo; nombre: string }[] = [
   { id: 0, nombre: "Todo" },
 ]
 
-const numero = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 })
-const decimal = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 1 })
-const compacto = new Intl.NumberFormat("es-CO", { notation: "compact", maximumFractionDigits: 1 })
+export const numero = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 })
+export const decimal = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 1 })
+export const compacto = new Intl.NumberFormat("es-CO", { notation: "compact", maximumFractionDigits: 1 })
 
-const fmt = (n: number | null | undefined) => (n == null ? "—" : numero.format(n))
+export const fmt = (n: number | null | undefined) => (n == null ? "—" : numero.format(n))
 const pct = (n: number | null) => (n == null ? "—" : `${decimal.format(n * 100)} %`)
-const suma = (xs: (number | null | undefined)[]) => xs.reduce<number>((a, b) => a + (b ?? 0), 0)
+export const suma = (xs: (number | null | undefined)[]) => xs.reduce<number>((a, b) => a + (b ?? 0), 0)
 
 function tasa(p: Pick<PostMetrica, "interacciones" | "alcance">): number | null {
   return p.alcance && p.interacciones != null ? p.interacciones / p.alcance : null
@@ -52,20 +52,20 @@ function tasaGlobal(posts: PostMetrica[]): number | null {
 }
 
 /** "2026-11-08" -> el dia siguiente o anterior. */
-function moverDia(dia: string, n: number): string {
+export function moverDia(dia: string, n: number): string {
   const d = new Date(`${dia}T12:00:00Z`)
   d.setUTCDate(d.getUTCDate() + n)
   return d.toISOString().slice(0, 10)
 }
 
-const etiquetaDia = (dia: string, largo = false) =>
+export const etiquetaDia = (dia: string, largo = false) =>
   new Intl.DateTimeFormat("es-CO", { timeZone: "UTC", day: "numeric", month: "short", ...(largo ? { weekday: "long" } : {}) }).format(new Date(`${dia}T12:00:00Z`))
 
-const mayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+export const mayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
 
 // ------------------------------------------------------------ piezas chicas
 
-function Segmentos<T extends string | number>({ opciones, valor, onChange }: { opciones: { id: T; nombre: string }[]; valor: T; onChange: (v: T) => void }) {
+export function Segmentos<T extends string | number>({ opciones, valor, onChange }: { opciones: { id: T; nombre: string }[]; valor: T; onChange: (v: T) => void }) {
   return (
     <div className="bg-muted inline-flex rounded-lg p-[3px]">
       {opciones.map((o) => (
@@ -118,7 +118,7 @@ function Cifra({ titulo, total, porRed, redes, nota }: { titulo: string; total: 
   )
 }
 
-function Dato({ etiqueta, valor, ayuda }: { etiqueta: string; valor: string; ayuda?: string }) {
+export function Dato({ etiqueta, valor, ayuda }: { etiqueta: string; valor: string; ayuda?: string }) {
   return (
     <div className="flex flex-col gap-0.5" title={ayuda}>
       <span className="text-muted-foreground text-xs">{etiqueta}</span>
