@@ -29,7 +29,13 @@ export type PostMetrica = {
   actualizado_at: string
 }
 
-export type DiaCuenta = { dia: string; toques_link: number | null; visitas_perfil: number | null; alcance: number | null }
+/**
+ * Una fila diaria de la cuenta. En Instagram, `toques_link` son los toques al
+ * link de la bio y `alcance` el alcance de la cuenta; en Facebook, `toques_link`
+ * son los clics en el boton y los datos de contacto de la pagina y `alcance` las
+ * vistas de toda la pagina.
+ */
+export type DiaCuenta = { red: "instagram" | "facebook"; dia: string; toques_link: number | null; visitas_perfil: number | null; alcance: number | null }
 
 export type MetricasVista = { posts: PostMetrica[]; dias: DiaCuenta[]; timezone: string; actualizado: string | null }
 
@@ -45,11 +51,10 @@ export async function getMetricas(): Promise<MetricasVista> {
       .limit(3000),
     supabase
       .from("cuenta_metricas_dia")
-      .select("dia, toques_link, visitas_perfil, alcance")
+      .select("red, dia, toques_link, visitas_perfil, alcance")
       .eq("account_id", accountId)
-      .eq("red", "instagram")
       .order("dia", { ascending: false })
-      .limit(400),
+      .limit(800),
     getSettings(accountId),
   ])
   const lista = (posts.data ?? []) as PostMetrica[]

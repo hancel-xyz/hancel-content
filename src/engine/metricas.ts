@@ -309,6 +309,57 @@ async function diasInstagram(accountId: string): Promise<number> {
   return hechos
 }
 
+/**
+ * Facebook por dia: clics en el boton y los datos de contacto de la pagina
+ * (`page_total_actions`, lo unico parecido a "toques al enlace" que da Meta; el
+ * link del primer comentario no se puede medir) y las vistas de toda la pagina.
+ * Una sola llamada para los 28 dias. Meta corta los dias a medianoche del
+ * Pacifico: el valor con `end_time` del dia 9 es el del dia 8.
+ */
+async function diasFacebook(accountId: string): Promise<number> {
+  const pagina = (await secretosDe(accountId)).facebook_page_id
+  if (!pagina) return 0
+  const r = await ejecutar<{ data?: { name: string; values?: { end_time?: string; value?: number }[] }[] }>(
+    accountId,
+    "facebook",
+    "FACEBOOK_GET_PAGE_INSIGHTS",
+    {
+      page_id: pagina,
+      metrics: "page_total_actions,page_media_view",
+      period: "day",
+      since: String(Math.floor((Date.now() - DIAS_CUENTA * 86_400_000) / 1000)),
+      until: String(Math.floor(Date.now() / 1000)),
+    },
+    60_000
+  )
+  if (!r.ok) throw new Error(`Facebook (página): ${r.error}`)
+  const porDia = new Map<string, { toques: number | null; vistas: number | null }>()
+  for (const m of r.data.data ?? []) {
+    for (const v of m.values ?? []) {
+      if (!v.end_time || typeof v.value !== "number") continue
+      const dia = new Date(Date.parse(v.end_time) - 86_400_000).toISOString().slice(0, 10)
+      const fila = porDia.get(dia) ?? { toques: null, vistas: null }
+      if (m.name === "page_total_actions") fila.toques = v.value
+      if (m.name === "page_media_view") fila.vistas = v.value
+      porDia.set(dia, fila)
+    }
+  }
+  const filas = [...porDia].map(([dia, f]) => ({
+    account_id: accountId,
+    red: "facebook",
+    dia,
+    toques_link: f.toques,
+    visitas_perfil: null,
+    alcance: f.vistas,
+    actualizado_at: new Date().toISOString(),
+  }))
+  if (filas.length) {
+    const { error } = await supabaseAdmin().from("cuenta_metricas_dia").upsert(filas, { onConflict: "account_id,red,dia" })
+    if (error) throw new Error(error.message)
+  }
+  return filas.length
+}
+
 // ----------------------------------------------------------------- pasada
 
 /**
@@ -352,6 +403,11 @@ export async function sincronizarMetricas(
       const filas = await postsFacebook(accountId, origenDe, dias)
       await guardar(filas)
       resumen.facebook = filas.length
+    } catch (e) {
+      resumen.errores.push(e instanceof Error ? e.message : String(e))
+    }
+    try {
+      resumen.dias += await diasFacebook(accountId)
     } catch (e) {
       resumen.errores.push(e instanceof Error ? e.message : String(e))
     }
