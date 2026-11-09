@@ -208,7 +208,9 @@ export function MetricasPortal({ vista }: { vista: PortalVista }) {
   }
 
   const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: vista.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ahora))
-  const masViejo = vista.dias.length ? vista.dias[vista.dias.length - 1].dia : hoy
+  // El dia que se empezo a medir: antes de eso hay filas en cero que no dicen nada.
+  const conDatos = vista.dias.filter((d) => d.vistas > 0)
+  const masViejo = conDatos.length ? conDatos[conDatos.length - 1].dia : hoy
   const primerDia = periodo ? moverDia(hoy, -(periodo - 1)) : masViejo < hoy ? masViejo : hoy
   const dias: string[] = []
   for (let d = primerDia; d <= hoy; d = moverDia(d, 1)) dias.push(d)
@@ -320,7 +322,7 @@ export function MetricasPortal({ vista }: { vista: PortalVista }) {
           valor={fmt(personas)}
           nota={`Estimado de personas distintas (un navegador = una persona). ${fmt(nuevos)} llegaron por primera vez.`}
         />
-        <Cifra titulo="Páginas vistas" valor={fmt(vistas)} nota={`${fmt(sesiones)} visitas · ${decimal.format(sesiones ? vistas / sesiones : 0)} páginas por visita`} />
+        <Cifra titulo="Páginas vistas" valor={fmt(vistas)} nota={`${fmt(sesiones)} ${sesiones === 1 ? "visita" : "visitas"} · ${decimal.format(sesiones ? vistas / sesiones : 0)} páginas por visita`} />
         <Cifra titulo="Tiempo de lectura" valor={duracion(lectura)} nota="Promedio por noticia abierta, solo con la página a la vista y en uso." />
         <Cifra
           titulo="Desde la página de enlaces"
