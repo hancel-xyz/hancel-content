@@ -5,8 +5,13 @@ import { authorizeEngineRequest } from "@/lib/api-auth"
 
 export const dynamic = "force-dynamic"
 
-/** Solo base de datos y dos webhooks; no es una ingesta. */
-export const maxDuration = 60
+/**
+ * 300, como los otros ticks. Con 60 la pasada se cortaba a mitad de un
+ * carrusel: Instagram tarda unos 45 s en publicar y despues van Facebook, su
+ * comentario con el link y la portada del portal. El tope de tiempo para
+ * empezar piezas nuevas sigue en `MS_PARA_PUBLICAR`.
+ */
+export const maxDuration = 300
 
 /**
  * Cuantos trabajos hace cada pasada.

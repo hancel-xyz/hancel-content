@@ -159,6 +159,18 @@ async function hermanasPendientes(job: string, salvo: string): Promise<{ id: str
  */
 export async function hermanasAtrasadas(accountId: string): Promise<string[]> {
   const supabase = supabaseAdmin()
+  // La que se quedo en 'publishing' (la pasada murio publicandola) vuelve a la
+  // cola. pendingToPublish solo suelta las de la red que manda; la hermana que
+  // la sigue quedaba colgada para siempre. Si de hecho alcanzo a salir,
+  // publicarFacebook la reconoce por su texto y no la repite.
+  await supabase
+    .from("content_pieces")
+    .update({ status: "generated", published_at: null })
+    .eq("account_id", accountId)
+    .in("network", REDES_CARRUSEL)
+    .eq("status", "publishing")
+    .lt("published_at", new Date(Date.now() - 5 * 60_000).toISOString())
+
   const { data: pendientes } = await supabase
     .from("content_pieces")
     .select("id, job_instagram_id")
