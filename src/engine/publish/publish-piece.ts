@@ -126,14 +126,23 @@ export async function publicarConHermanas(
     salida.push({ pieceId: hermana.id, network: hermana.network, result: await publishPiece(hermana.id) })
   }
 
-  // La portada para la pagina de enlaces del portal. Lo publicado ya salio:
-  // un fallo aqui solo se registra.
-  const instagram = salida.find((s) => s.network === "instagram" && s.result.ok)
-  if (instagram) {
+  // La portada para la pagina de enlaces del portal, desde la pieza de
+  // Instagram del carrusel aunque esta pasada solo haya sacado a su hermana:
+  // si la pasada que publico Instagram murio antes, aqui se recupera (la
+  // funcion no hace nada si ya la tiene). Lo publicado ya salio: un fallo
+  // aqui solo se registra.
+  const { data: ig } = await supabase
+    .from("content_pieces")
+    .select("id")
+    .eq("job_instagram_id", fila.job_instagram_id)
+    .eq("network", "instagram")
+    .eq("status", "published")
+    .maybeSingle()
+  if (ig) {
     try {
-      await prepararPortadaWeb(instagram.pieceId)
+      await prepararPortadaWeb((ig as { id: string }).id)
     } catch (e) {
-      console.error("[portada portal]", instagram.pieceId, e instanceof Error ? e.message : e)
+      console.error("[portada portal]", (ig as { id: string }).id, e instanceof Error ? e.message : e)
     }
   }
   return salida
