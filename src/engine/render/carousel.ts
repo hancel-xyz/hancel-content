@@ -684,7 +684,11 @@ async function generarCarruselAlterno(
       })
     )
   }
-  imagenes.push(await renderNoticia({ ...comun, composicion: "cierre", titular: estilo.cierre.titulo, cuerpo: estilo.cierre.texto, n: total }))
+  // Si la noticia tiene nota en el portal, el cierre invita a leerla: el link
+  // esta en el perfil (Instagram no deja links en el texto).
+  const { linkDeLaNota } = await import("../content/desde-portal")
+  const aviso = news?.id && (await linkDeLaNota(news.id)) ? "Lee la nota completa en el link de nuestro perfil" : null
+  imagenes.push(await renderNoticia({ ...comun, composicion: "cierre", titular: estilo.cierre.titulo, cuerpo: estilo.cierre.texto, aviso, n: total }))
 
   // La foto de prensa lleva su credito; la de banco no lo necesita.
   if (hecho && imagenes[0]) imagenes[0] = await estamparCredito(imagenes[0], hecho.medio, estilo)

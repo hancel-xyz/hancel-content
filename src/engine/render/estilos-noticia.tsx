@@ -46,6 +46,32 @@ export type LaminaNoticia = {
   logoClaro?: string | null
   logoOscuro?: string | null
   estilo: Estilo
+  /** Solo el cierre: la invitacion a leer la nota del portal ("Lee la nota completa..."). */
+  aviso?: string | null
+}
+
+/** El aviso del cierre: un recuadro con el borde del acento, para que se lea como una indicacion. */
+function Aviso({ texto, color, acento, fondo }: { texto: string; color: string; acento: string; fondo?: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        marginTop: 52,
+        padding: "22px 40px",
+        border: `4px solid ${acento}`,
+        borderRadius: 18,
+        fontSize: 34,
+        fontWeight: 600,
+        lineHeight: 1.3,
+        color,
+        textAlign: "center",
+        maxWidth: 860,
+        ...(fondo ? { background: fondo } : {}),
+      }}
+    >
+      {texto}
+    </div>
+  )
 }
 
 /** El verde de la marca cuando la paleta no trae un color propio. */
@@ -167,6 +193,7 @@ function Editorial(l: LaminaNoticia) {
         {l.cuerpo ? (
           <div style={{ display: "flex", marginTop: 32, fontSize: 40, lineHeight: 1.3, color: ED.suave, maxWidth: 820 }}>{cortar(limpio(l.cuerpo), 160)}</div>
         ) : null}
+        {l.aviso ? <Aviso texto={l.aviso} color={ED.texto} acento={acento} /> : null}
         <div style={{ display: "flex", marginTop: 56, background: ED.texto, color: "#FFFFFF", fontSize: 30, fontWeight: 600, padding: "20px 44px", borderRadius: 999 }}>
           Seguir
         </div>
@@ -301,6 +328,7 @@ function Impacto(l: LaminaNoticia) {
         {l.cuerpo ? (
           <div style={{ display: "flex", marginTop: 30, fontSize: 38, lineHeight: 1.35, color: IM.suave, textAlign: "center", maxWidth: 820 }}>{cortar(limpio(l.cuerpo), 160)}</div>
         ) : null}
+        {l.aviso ? <Aviso texto={l.aviso} color={IM.texto} acento={acento} /> : null}
       </div>
     )
   }
@@ -456,6 +484,7 @@ function Periodico(l: LaminaNoticia) {
         <div style={{ display: "flex", marginTop: 64, fontFamily: PE.serif, fontWeight: 500, fontSize: 96, lineHeight: 1.05, textAlign: "center" }}>{cortar(titular, 40)}</div>
         <div style={{ display: "flex", width: 300, height: 6, background: acento, marginTop: 32, marginBottom: 28 }} />
         {l.cuerpo ? <div style={{ display: "flex", fontSize: 38, lineHeight: 1.35, color: PE.suave, textAlign: "center", maxWidth: 820 }}>{cortar(limpio(l.cuerpo), 160)}</div> : null}
+        {l.aviso ? <Aviso texto={l.aviso} color={PE.texto} acento={acento} /> : null}
       </div>
     )
   }
