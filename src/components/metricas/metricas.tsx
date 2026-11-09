@@ -61,6 +61,8 @@ function moverDia(dia: string, n: number): string {
 const etiquetaDia = (dia: string, largo = false) =>
   new Intl.DateTimeFormat("es-CO", { timeZone: "UTC", day: "numeric", month: "short", ...(largo ? { weekday: "long" } : {}) }).format(new Date(`${dia}T12:00:00Z`))
 
+const mayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+
 // ------------------------------------------------------------ piezas chicas
 
 function Segmentos<T extends string | number>({ opciones, valor, onChange }: { opciones: { id: T; nombre: string }[]; valor: T; onChange: (v: T) => void }) {
@@ -160,7 +162,7 @@ function TooltipDia({ active, payload, redes, clave }: { active?: boolean; paylo
   const valores = redes.map((r) => ({ r, v: Number(fila[`${clave}_${r}`] ?? 0) }))
   return (
     <div className="bg-popover text-popover-foreground rounded-lg border px-3 py-2 text-xs shadow-md">
-      <div className="mb-1 font-medium capitalize">{etiquetaDia(fila.dia, true)}</div>
+      <div className="mb-1 font-medium">{mayuscula(etiquetaDia(fila.dia, true))}</div>
       {valores.map(({ r, v }) => (
         <div key={r} className="flex items-center justify-between gap-4">
           <span className="inline-flex items-center gap-1.5">
@@ -202,7 +204,10 @@ function GraficaDiaria({
   seleccionado: string
   onElegir: (dia: string) => void
 }) {
-  const total = suma(datos.flatMap((d) => redes.map((r) => Number(d[`${clave}_${r}`] ?? 0))))
+  const totalDe = (d: FilaDia) => suma(redes.map((r) => Number(d[`${clave}_${r}`] ?? 0)))
+  const total = suma(datos.map(totalDe))
+  // Se resalta el dia elegido solo si en esta grafica tiene algo; si no, todas las barras a color pleno.
+  const resaltar = datos.some((d) => d.dia === seleccionado && totalDe(d) > 0)
   return (
     <Card>
       <CardHeader className="pb-0">
@@ -260,7 +265,7 @@ function GraficaDiaria({
                     isAnimationActive={false}
                   >
                     {datos.map((d) => (
-                      <Cell key={d.dia} fillOpacity={d.dia === seleccionado ? 1 : 0.45} />
+                      <Cell key={d.dia} fillOpacity={!resaltar || d.dia === seleccionado ? 1 : 0.4} />
                     ))}
                   </Bar>
                 ))}
@@ -323,7 +328,8 @@ export function Metricas({ vista }: { vista: MetricasVista }) {
     return (iso: string | number) => f.format(new Date(iso))
   }, [vista.timezone])
   const hoy = diaDe(ahora)
-  const [dia, setDia] = React.useState(hoy)
+  // Hoy, o el ultimo dia con posts si hoy aun no se publico nada.
+  const [dia, setDia] = React.useState(() => (vista.posts.length ? diaDe(vista.posts[0].publicado_at) : hoy))
   const [todosLosPosts, setTodosLosPosts] = React.useState(false)
 
   const redes = REDES.filter((r) => filtroRed === "todas" || filtroRed === r)
@@ -466,7 +472,7 @@ export function Metricas({ vista }: { vista: MetricasVista }) {
               <Button variant="ghost" size="icon" aria-label="Día anterior" onClick={() => elegir(moverDia(dia, -1))}>
                 <ChevronLeftIcon />
               </Button>
-              <CardTitle className="text-base capitalize">{dia === hoy ? `Hoy, ${etiquetaDia(dia)}` : etiquetaDia(dia, true)}</CardTitle>
+              <CardTitle className="text-base">{dia === hoy ? `Hoy, ${etiquetaDia(dia)}` : mayuscula(etiquetaDia(dia, true))}</CardTitle>
               <Button variant="ghost" size="icon" aria-label="Día siguiente" disabled={dia >= hoy} onClick={() => elegir(moverDia(dia, 1))}>
                 <ChevronRightIcon />
               </Button>
