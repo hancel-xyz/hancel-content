@@ -17,7 +17,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { BotIcon, ChefHatIcon, ClapperboardIcon, DownloadIcon, GalleryHorizontalEndIcon, KanbanIcon, LayersIcon, LightbulbIcon, SendIcon, SettingsIcon } from "lucide-react"
+import { BotIcon, ChartColumnIcon, ChefHatIcon, ClapperboardIcon, DownloadIcon, GalleryHorizontalEndIcon, KanbanIcon, LayersIcon, LightbulbIcon, SendIcon, SettingsIcon } from "lucide-react"
 
 import { AGENTES } from "@/lib/agentes-catalogo"
 
@@ -99,6 +99,14 @@ export function AppSidebar({
       url: "/descargar-videos",
       icon: <DownloadIcon />,
       isActive: pathname.startsWith("/descargar-videos"),
+      items: [],
+    },
+    {
+      // Las cifras de cada post publicado desde Hancel en Instagram y Facebook.
+      title: "Métricas",
+      url: "/metricas",
+      icon: <ChartColumnIcon />,
+      isActive: pathname.startsWith("/metricas"),
       items: [],
     },
     {
