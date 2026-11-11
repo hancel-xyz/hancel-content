@@ -684,11 +684,12 @@ async function generarCarruselAlterno(
       })
     )
   }
-  // Si la noticia tiene nota en el portal, el cierre invita a leerla: el link
-  // esta en el perfil (Instagram no deja links en el texto).
+  // Si la noticia tiene nota en el portal, el cierre ya no pide seguir la
+  // cuenta: invita a leer la nota en el link del perfil, en grande (Instagram no
+  // deja links en el texto). Sin nota, queda el cierre de marca de siempre.
   const { linkDeLaNota } = await import("../content/desde-portal")
-  const aviso = news?.id && (await linkDeLaNota(news.id)) ? "Lee la nota completa en el link de nuestro perfil" : null
-  imagenes.push(await renderNoticia({ ...comun, composicion: "cierre", titular: estilo.cierre.titulo, cuerpo: estilo.cierre.texto, aviso, n: total }))
+  const leerNota = Boolean(news?.id && (await linkDeLaNota(news.id)))
+  imagenes.push(await renderNoticia({ ...comun, composicion: "cierre", titular: estilo.cierre.titulo, cuerpo: estilo.cierre.texto, leerNota, n: total }))
 
   // La foto de prensa lleva su credito; la de banco no lo necesita.
   if (hecho && imagenes[0]) imagenes[0] = await estamparCredito(imagenes[0], hecho.medio, estilo)

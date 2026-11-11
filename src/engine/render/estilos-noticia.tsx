@@ -46,30 +46,47 @@ export type LaminaNoticia = {
   logoClaro?: string | null
   logoOscuro?: string | null
   estilo: Estilo
-  /** Solo el cierre: la invitacion a leer la nota del portal ("Lee la nota completa..."). */
-  aviso?: string | null
+  /**
+   * Solo el cierre: la noticia tiene nota en el portal. Entonces el cierre no
+   * pide seguir la cuenta: invita a leer la nota en el link del perfil, en grande.
+   */
+  leerNota?: boolean
 }
 
-/** El aviso del cierre: un recuadro con el borde del acento, para que se lea como una indicacion. */
-function Aviso({ texto, color, acento, fondo }: { texto: string; color: string; acento: string; fondo?: string }) {
+/**
+ * El cierre cuando hay nota en el portal, a la manera de Forbes ("La historia
+ * completa en Forbes.co"): fondo negro, la marca en blanco y la invitacion a leer
+ * la nota como lo mas grande de la lamina. Es lo unico que pide: no hay "siguenos".
+ * Instagram no deja links en el texto, asi que el link es el del perfil.
+ */
+function CierreNota({ l, fuente }: { l: LaminaNoticia; fuente: string }) {
+  const acento = acentoDe(l.estilo)
+  const logo = l.logoClaro ?? null
   return (
     <div
       style={{
         display: "flex",
-        marginTop: 52,
-        padding: "22px 40px",
-        border: `4px solid ${acento}`,
-        borderRadius: 18,
-        fontSize: 34,
-        fontWeight: 600,
-        lineHeight: 1.3,
-        color,
-        textAlign: "center",
-        maxWidth: 860,
-        ...(fondo ? { background: fondo } : {}),
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        width: ANCHO,
+        height: ALTO,
+        background: "#0B0B0B",
+        color: "#FFFFFF",
+        fontFamily: l.estilo.fuente,
+        padding: 90,
       }}
     >
-      {texto}
+      {logo ? <Img src={logo} style={{ width: 640, height: 150, objectFit: "contain" }} /> : null}
+      <div style={{ display: "flex", width: 300, height: 7, background: acento, marginTop: logo ? 64 : 0, marginBottom: 56 }} />
+      <div style={{ display: "flex", fontFamily: fuente, fontWeight: 500, fontSize: 92, lineHeight: 1.08, letterSpacing: -1.5, textAlign: "center" }}>
+        Lee la nota completa
+      </div>
+      {/* Satori no mezcla texto y spans: dos piezas en fila, la segunda en negrita. */}
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", marginTop: 18, fontFamily: fuente, fontSize: 64, lineHeight: 1.15 }}>
+        <div style={{ display: "flex", color: "#D9D9D9", marginRight: 18 }}>en el</div>
+        <div style={{ display: "flex", fontWeight: 700, color: "#FFFFFF" }}>link de nuestro perfil</div>
+      </div>
     </div>
   )
 }
@@ -185,6 +202,8 @@ function Editorial(l: LaminaNoticia) {
     )
   }
 
+  if (l.composicion === "cierre" && l.leerNota) return <CierreNota l={l} fuente={l.estilo.fuente} />
+
   if (l.composicion === "cierre") {
     return (
       <div style={{ ...base, alignItems: "flex-start", justifyContent: "center", padding: 96 }}>
@@ -193,7 +212,6 @@ function Editorial(l: LaminaNoticia) {
         {l.cuerpo ? (
           <div style={{ display: "flex", marginTop: 32, fontSize: 40, lineHeight: 1.3, color: ED.suave, maxWidth: 820 }}>{cortar(limpio(l.cuerpo), 160)}</div>
         ) : null}
-        {l.aviso ? <Aviso texto={l.aviso} color={ED.texto} acento={acento} /> : null}
         <div style={{ display: "flex", marginTop: 56, background: ED.texto, color: "#FFFFFF", fontSize: 30, fontWeight: 600, padding: "20px 44px", borderRadius: 999 }}>
           Seguir
         </div>
@@ -317,6 +335,8 @@ function Impacto(l: LaminaNoticia) {
     )
   }
 
+  if (l.composicion === "cierre" && l.leerNota) return <CierreNota l={l} fuente={IM.titulo} />
+
   if (l.composicion === "cierre") {
     return (
       <div style={{ ...base, alignItems: "center", justifyContent: "center", padding: 90 }}>
@@ -328,7 +348,6 @@ function Impacto(l: LaminaNoticia) {
         {l.cuerpo ? (
           <div style={{ display: "flex", marginTop: 30, fontSize: 38, lineHeight: 1.35, color: IM.suave, textAlign: "center", maxWidth: 820 }}>{cortar(limpio(l.cuerpo), 160)}</div>
         ) : null}
-        {l.aviso ? <Aviso texto={l.aviso} color={IM.texto} acento={acento} /> : null}
       </div>
     )
   }
@@ -476,6 +495,8 @@ function Periodico(l: LaminaNoticia) {
     )
   }
 
+  if (l.composicion === "cierre" && l.leerNota) return <CierreNota l={l} fuente={PE.serif} />
+
   if (l.composicion === "cierre") {
     return (
       <div style={{ ...base, alignItems: "center", justifyContent: "center", padding: 90 }}>
@@ -484,7 +505,6 @@ function Periodico(l: LaminaNoticia) {
         <div style={{ display: "flex", marginTop: 64, fontFamily: PE.serif, fontWeight: 500, fontSize: 96, lineHeight: 1.05, textAlign: "center" }}>{cortar(titular, 40)}</div>
         <div style={{ display: "flex", width: 300, height: 6, background: acento, marginTop: 32, marginBottom: 28 }} />
         {l.cuerpo ? <div style={{ display: "flex", fontSize: 38, lineHeight: 1.35, color: PE.suave, textAlign: "center", maxWidth: 820 }}>{cortar(limpio(l.cuerpo), 160)}</div> : null}
-        {l.aviso ? <Aviso texto={l.aviso} color={PE.texto} acento={acento} /> : null}
       </div>
     )
   }
@@ -524,5 +544,7 @@ export async function renderNoticia(l: LaminaNoticia): Promise<Buffer> {
 
 /** Que composicion lleva cada lamina interior: alterna foto y tipografia. */
 export function repartirNoticia(interiores: number, conFotos: boolean): ComposicionNoticia[] {
-  return Array.from({ length: interiores }, (_, i) => (conFotos && i % 2 === 0 ? "foto" : "texto"))
+  // La ultima lamina interior es la conclusion: solo texto, que se lee rapido y
+  // se distingue del resto. Las de antes llevan foto, cada una distinta.
+  return Array.from({ length: interiores }, (_, i) => (conFotos && i < interiores - 1 ? "foto" : "texto"))
 }

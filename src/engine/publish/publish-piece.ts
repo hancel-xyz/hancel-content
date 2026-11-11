@@ -263,16 +263,19 @@ async function publicarEnFacebook(piece: ContentPiece): Promise<PublishResult> {
     return { ok: false, error: "La pieza de Facebook no tiene imagen." }
   }
 
-  const cuerpo = buildCommentary(piece.payload)
-  if (!cuerpo.trim()) {
+  const texto = buildCommentary(piece.payload)
+  if (!texto.trim()) {
     return { ok: false, error: "La pieza no tiene texto que publicar." }
   }
+  // El link a la nota del portal va en el primer comentario, no en el texto
+  // (Facebook le resta alcance a los posts con links). El texto termina
+  // diciendolo, para que quien llega al final sepa donde seguir leyendo.
+  const nota = await linkDeLaNota(piece.raw_news_id)
+  const cuerpo = nota ? `${texto.trim()}\n\nLee la nota completa en el primer comentario.` : texto
   const resultado = await publicarFacebook(piece.account_id, { texto: cuerpo, imagenes: [imagen] })
   if (!resultado.ok) return { ok: false, error: resultado.error }
 
-  // El link a la nota del portal va en el primer comentario, no en el texto.
   // El post ya salio: si comentar falla se registra, pero no se republica.
-  const nota = await linkDeLaNota(piece.raw_news_id)
   if (nota && resultado.postId && resultado.postId !== "publicado") {
     const comentario = await comentarFacebook(piece.account_id, resultado.postId, `Lee la nota completa: ${nota}`)
     if (!comentario.ok) console.error("[facebook] no se pudo comentar el link", piece.id, comentario.error)
