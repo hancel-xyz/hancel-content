@@ -219,7 +219,7 @@ LÁMINA 4: EL CIERRE QUE ABRE
 Tiene dos trabajos a la vez: cerrar la historia y abrir una sola pregunta que solo la nota completa responde. Si no cierras, frustras; si no abres, nadie va a la nota.
 - TÍTULO = LA CONCLUSIÓN: qué significa la noticia, no qué pasó. Puede ser la lección ("Para competir con Brasil, el mango peruano no puede subir precios"), la consecuencia ("Sin papeles de la tierra, el café podría quedarse fuera de Europa"), el giro o el costo humano ("Hay ganaderos que hoy pierden plata por cada litro de leche"). Es una afirmación, no una pregunta, y no repite la lámina 1.
 - CUERPO (25 a 40 palabras): la primera frase da el dato o la fuente que respalda la conclusión; la última frase es la apertura (más abajo te digo cómo escribirla según haya o no nota).
-- Errores: cerrar con un dato más en vez de una conclusión; una apertura vaga ("hay mucho más por saber", "esto apenas comienza"); abrir tres preguntas; poner "link en la bio" o "síguenos" (eso lo dice la lámina de cierre); repetir siempre la misma fórmula ("El reto ahora es…").
+- Errores: cerrar con un dato más en vez de una conclusión; una apertura vaga ("hay mucho más por saber", "esto apenas comienza"); abrir tres preguntas; mencionar la nota, el artículo, el link, el perfil o "síguenos" en cualquier lámina (eso lo dice la lámina de cierre); repetir siempre la misma fórmula ("El reto ahora es…").
 
 QUÉ SE QUEDA PARA LA NOTA
 Decídelo antes de escribir, no al final. Haz la lista de lo que trae la noticia (hechos, causas, protagonistas, cifras, citas, recomendaciones, próximos pasos). Lo esencial para entenderla va en el carrusel: quien no haga clic igual tiene que entender la noticia. De lo que profundiza, escoge UNA pieza que genere curiosidad (qué hacer, una lista, cifras por región, lo que cuenta un protagonista) y resérvala para la apertura de la lámina 4.
@@ -256,12 +256,15 @@ Esta búsqueda va a un buscador de internet, no a un banco de fotos: pide la cos
 RESPONDE SOLO con este JSON, sin texto alrededor:
 {"slide_count":4,"caption":"<2 o 3 frases: lo esencial y una pregunta concreta para comentar>","hashtags":["<3 a 6 en minúscula sin espacios>"],"fotos":["<5 a 8 búsquedas en inglés>"],"elemento":"<una búsqueda en español de la cosa concreta>","etiqueta":"<1 a 3 palabras, la categoría de esta noticia>","slides":[{"n":1,"type":"photo_hook","hook":"<8 a 14 palabras, máx 95 caracteres>"},{"n":2,"type":"text","title":"<8 a 14 palabras, máx 90 caracteres>","body":"<1 o 2 frases>"}]}
 
-El array slides va en orden y tiene 4 elementos: el primero photo_hook, los otros tres text. Antes de responder relee y confirma: que no hay guiones largos; que cada título nombra su tema y se entiende solo; que ningún título pasa de 90 caracteres ni el hook de 95; que la lámina 2 tiene un ángulo distinto al de la portada; que cada persona lleva su rol en cada lámina donde aparece ("el experto Jim Ruiz", nunca "Jim Ruiz" o "Ruiz" solos); que todo término técnico está explicado; que la lámina 4 cierra con una conclusión y abre una sola pregunta; y que el texto lleva todas sus tildes y sus eñes.`
+El array slides va en orden y tiene 4 elementos: el primero photo_hook, los otros tres text. Antes de responder relee y confirma: que no hay guiones largos; que cada título nombra su tema y se entiende solo; que ningún título pasa de 90 caracteres ni el hook de 95; que la lámina 2 tiene un ángulo distinto al de la portada; que cada persona lleva su rol en cada lámina donde aparece ("el experto Jim Ruiz", nunca "Jim Ruiz" o "Ruiz" solos); que todo término técnico está explicado; que la lámina 4 cierra con una conclusión y deja un solo hueco concreto sin mencionar la nota, el link ni el perfil; y que el texto lleva todas sus tildes y sus eñes.`
 
 /** Como termina la lamina 4 cuando hay nota del portal: con una promesa que la nota cumple. */
 const APERTURA_CON_NOTA = `
 LA APERTURA DE LA LÁMINA 4
-La última frase del cuerpo de la lámina 4 empieza por "La nota" ("La nota explica…", "La nota detalla…", "La nota cuenta…") y promete UNA cosa concreta que está en esta nota y que el carrusel no contó: qué hacer, una lista, las cifras por región, lo que cuenta un protagonista, lo que sigue. Antes de escribirla, busca esa información en la nota de arriba: si no está, promete otra cosa que sí esté. "La nota explica qué tendría que cambiar Perú" sirve; "La nota tiene más detalles" no.
+La última frase del cuerpo de la lámina 4 deja un hueco sutil: nombra UNA cosa concreta que existe y que el carrusel no revela, para que la persona sienta que le falta saberla. NO menciona dónde está la respuesta: nada de "la nota", "el artículo", "el link", "el enlace", "el perfil", "la bio", "más detalles", "más información", "te contamos" ni "descubre". De mandar a leer se encarga la lámina de cierre; aquí solo se despierta la curiosidad.
+- Es una afirmación que da a entender que la respuesta existe, no una pregunta al aire: "Jim Ruiz tiene claro qué tendría que cambiar Perú." "Hay un formato de mango que podría ganar terreno, y no es la fruta fresca." "Claudia Roldán ya encontró una forma de no cerrar la finca." "Tres regiones tienen trámites pendientes, y Córdoba no es una de ellas."
+- Lo que insinúas TIENE que estar en la nota de arriba y no en el carrusel. Antes de escribirla, búscalo en la nota; si no está, insinúa otra cosa que sí esté. Nunca inventes un giro ("y no es lo que esperas") que la nota no sostenga.
+- Concreta: di de qué se trata (qué cambiar, qué formato, qué regiones, qué propone alguien), sin decir la respuesta. "Hay mucho más por saber" o "esto apenas comienza" no sirven.
 `
 
 /**
@@ -378,6 +381,9 @@ Devuelve el JSON completo corregido, con el mismo formato. Cambia solo lo necesa
 /** Palabras que hacen que un titulo dependa de la lamina anterior. */
 const REFERENCIA_A_LO_ANTERIOR = /\b(es[ae]s?|esos|est[ae]s?(?! (semana|año|mes|lunes|martes|miércoles|jueves|viernes|sábado|domingo|temporada|campaña|cosecha|vez)\b)|estos|dich[oa]s?|aquell[ao]s?|tal(es)? (medida|decisión|fallo)|el fallo|la medida|la decisión|el plan|el proyecto|el fenómeno|esto|eso)\b/i
 
+/** Frases que mandan a leer: eso es trabajo de la lamina de cierre, no del contenido. */
+const MENCIONA_LA_NOTA = /\b(la nota|el artículo|el articulo|el link|el enlace|nuestro perfil|el perfil|la bio|más detalles|más información|te contamos|descubre)\b/i
+
 /** Lo que incumple el carrusel de las reglas que se pueden medir. */
 function revisarCarrusel(respuesta: unknown): string[] {
   const slides = ((respuesta as { slides?: unknown[] } | null)?.slides ?? []) as { n?: number; type?: string; hook?: string; title?: string; body?: string }[]
@@ -393,6 +399,8 @@ function revisarCarrusel(respuesta: unknown): string[] {
     const ref = titulo.match(REFERENCIA_A_LO_ANTERIOR)
     if (ref) fallos.push(`Lámina ${n}: el título «${titulo}» usa «${ref[0]}», que solo se entiende viendo otra lámina. Nombra el tema concreto.`)
     if (titulo.length > 90) fallos.push(`Lámina ${n}: el título pasa de 90 caracteres.`)
+    const aviso = `${titulo} ${s.body ?? ""}`.match(MENCIONA_LA_NOTA)
+    if (aviso) fallos.push(`Lámina ${n}: dice «${aviso[0]}». Ninguna lámina menciona la nota, el link ni el perfil (eso lo hace la lámina de cierre). Deja el hueco con sutileza: nombra qué falta saber sin decir dónde está.`)
     const tope = n === 4 ? 40 : 30
     const largo = palabras(s.body ?? "")
     if (largo > tope + 5) fallos.push(`Lámina ${n}: el cuerpo tiene ${largo} palabras y el máximo es ${tope}.`)
