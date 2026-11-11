@@ -165,6 +165,7 @@ Todo lo que escribas se publica tal cual. Lleva sus tildes y sus eñes, siempre.
 
 PROHIBICIÓN DE CARACTERES
 NUNCA uses guion largo ni medio en ningún campo. Usa coma, punto, dos puntos o paréntesis.
+Dentro de los textos NUNCA uses comillas dobles rectas ("): rompen el JSON. Si citas algo, usa comillas latinas: «así».
 
 REGLAS PARA TODAS LAS LÁMINAS
 - CADA LÁMINA SE ENTIENDE SOLA. Instagram le muestra la lámina 2 a quien no vio la 1, y la gente comparte o hace captura de una lámina suelta. Nombra siempre el tema en el título: el producto, el lugar o el protagonista. PROHIBIDO empezar con referencias a algo anterior: "el fallo", "esa cifra", "este dato", "el plan", "el proyecto", "el fenómeno", "el ejercicio", "los beneficiarios", "será", "todo", "esto".
@@ -338,5 +339,63 @@ ${bloqueVariables(input.variables)}`
       return { respuesta, uso }
     }
   }
-  return { respuesta: conApertura ? recortar(respuesta) : respuesta, uso: r.uso }
+  if (!conApertura) return { respuesta, uso: r.uso }
+
+  // Las reglas que el modelo mas se salta: titulos que dependen de la lamina
+  // anterior ("esas tierras", "estas zonas") y cuerpos que no caben. Si hay
+  // alguno, se le devuelve su propio JSON con la lista para que lo corrija una
+  // vez. Si la correccion no sirve, se queda la primera version.
+  const recortada = recortar(respuesta)
+  const fallos = revisarCarrusel(recortada)
+  if (fallos.length === 0) return { respuesta: recortada, uso: r.uso }
+  const correccion = await llamarClaude({
+    accountId,
+    model,
+    system,
+    prompt: `${prompt}
+
+ESTE ES TU CARRUSEL:
+${JSON.stringify(recortada)}
+
+CORRÍGELO. Incumple estas reglas:
+${fallos.map((f) => `- ${f}`).join("\n")}
+
+Devuelve el JSON completo corregido, con el mismo formato. Cambia solo lo necesario para cumplir las reglas.`,
+    maxTokens: 3600,
+  })
+  const uso = { entrada: r.uso.entrada + (correccion.ok ? correccion.uso.entrada : 0), salida: r.uso.salida + (correccion.ok ? correccion.uso.salida : 0) }
+  if (!correccion.ok) return { respuesta: recortada, uso }
+  try {
+    const corregida = recortar(parsearJSONDeClaude(correccion.texto))
+    const n = (corregida as { slides?: unknown[] } | null)?.slides
+    if (Array.isArray(n) && n.length === 4 && revisarCarrusel(corregida).length < fallos.length) return { respuesta: corregida, uso }
+  } catch {
+    // La correccion no trajo JSON valido: vale la primera version.
+  }
+  return { respuesta: recortada, uso }
+}
+
+/** Palabras que hacen que un titulo dependa de la lamina anterior. */
+const REFERENCIA_A_LO_ANTERIOR = /\b(es[ae]s?|esos|est[ae]s?(?! (semana|año|mes|lunes|martes|miércoles|jueves|viernes|sábado|domingo|temporada|campaña|cosecha|vez)\b)|estos|dich[oa]s?|aquell[ao]s?|tal(es)? (medida|decisión|fallo)|el fallo|la medida|la decisión|el plan|el proyecto|el fenómeno|esto|eso)\b/i
+
+/** Lo que incumple el carrusel de las reglas que se pueden medir. */
+function revisarCarrusel(respuesta: unknown): string[] {
+  const slides = ((respuesta as { slides?: unknown[] } | null)?.slides ?? []) as { n?: number; type?: string; hook?: string; title?: string; body?: string }[]
+  const fallos: string[] = []
+  const palabras = (t: string) => t.trim().split(/\s+/).filter(Boolean).length
+  slides.forEach((s, i) => {
+    const n = i + 1
+    if (s.type === "photo_hook") {
+      if ((s.hook ?? "").length > 95) fallos.push(`Lámina ${n}: el gancho pasa de 95 caracteres.`)
+      return
+    }
+    const titulo = s.title ?? ""
+    const ref = titulo.match(REFERENCIA_A_LO_ANTERIOR)
+    if (ref) fallos.push(`Lámina ${n}: el título «${titulo}» usa «${ref[0]}», que solo se entiende viendo otra lámina. Nombra el tema concreto.`)
+    if (titulo.length > 90) fallos.push(`Lámina ${n}: el título pasa de 90 caracteres.`)
+    const tope = n === 4 ? 40 : 30
+    const largo = palabras(s.body ?? "")
+    if (largo > tope + 5) fallos.push(`Lámina ${n}: el cuerpo tiene ${largo} palabras y el máximo es ${tope}.`)
+  })
+  return fallos
 }

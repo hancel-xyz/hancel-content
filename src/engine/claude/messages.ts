@@ -215,12 +215,52 @@ export function parsearJSONDeClaude(texto: string): unknown {
     // Red de seguridad: si un salto de linea se colo dentro de una cadena, el
     // parseo falla. Cambiarlos por espacios rescata la respuesta; entre tokens
     // el JSON ignora los espacios, asi que no rompe nada.
+    const sinSaltos = limpio.replace(/[\n\r\t]+/g, " ")
     try {
-      return JSON.parse(limpio.replace(/[\n\r\t]+/g, " "))
+      return JSON.parse(sinSaltos)
     } catch {
-      throw new Error(`La respuesta de Claude no es JSON valido. Empezaba: ${texto.slice(0, 200)}`)
+      // Segunda red: comillas sin escapar dentro de un texto ("El lema "Lee
+      // la nota" ..."). Pasa cuando el texto cita algo entre comillas.
+      try {
+        return JSON.parse(escaparComillasInternas(sinSaltos))
+      } catch {
+        if (process.env.DEBUG_JSON_CLAUDE) console.error(texto)
+        throw new Error(`La respuesta de Claude no es JSON valido. Empezaba: ${texto.slice(0, 200)}`)
+      }
     }
   }
+}
+
+/**
+ * Escapa las comillas que caen dentro de una cadena y no la cierran. Una
+ * comilla cierra la cadena si lo siguiente (sin espacios) es `,` `:` `}` `]` o
+ * el final; si no, es parte del texto y se escapa.
+ */
+function escaparComillasInternas(json: string): string {
+  let salida = ""
+  let enCadena = false
+  for (let i = 0; i < json.length; i++) {
+    const c = json[i]
+    if (c === "\\" && enCadena) {
+      salida += c + (json[i + 1] ?? "")
+      i++
+      continue
+    }
+    if (c === '"') {
+      if (!enCadena) {
+        enCadena = true
+      } else {
+        const resto = json.slice(i + 1).trimStart()
+        if (resto === "" || /^[,:}\]]/.test(resto)) enCadena = false
+        else {
+          salida += '\\"'
+          continue
+        }
+      }
+    }
+    salida += c
+  }
+  return salida
 }
 
 /** Traduce los fallos mas comunes a algo accionable en la interfaz. */
