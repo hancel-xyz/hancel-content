@@ -171,10 +171,10 @@ REGLAS PARA TODAS LAS LÁMINAS
 - UNA SOLA IDEA por título. Si necesitas un "y además", son dos ideas: una se va a otra lámina o al cuerpo. Máximo dos números por lámina.
 - VERBOS DE ACCIÓN CONCRETOS. Débiles: dice, avaló, se reunieron, cumple, tiene, invierte, se presentó, se registró, se evidenció. Fuertes: tumbó, le quitó, blindó, se disparó, pasó el examen, dejaron, frenó, duplicó. Un verbo fuerte convierte un dato en algo que está pasando.
 - NÚMEROS HUMANIZADOS EN LOS TÍTULOS. El lector entiende la magnitud sin hacer cuentas: 16,5% recibe asistencia → "más de 8 de cada 10 no la reciben"; subió 98% → "cuesta casi el doble"; 25% → "un cuarto"; USD 4.262,4 millones → "más de USD 4.200 millones". Los números exactos van en el cuerpo.
-- SIN SIGLAS NI NOMBRES QUE LA AUDIENCIA NO CONOCE. Escríbelas completas (PMA → Programa Mundial de Alimentos) o cámbialas por una descripción ("el mayor productor de cacao del mundo" en vez de "Costa de Marfil, según Sodexam"). A una persona preséntala la primera vez que aparece: "el experto Jim Ruiz", "Claudia Roldán, ganadera en Córdoba", nunca "Ruiz" solo.
+- SIN SIGLAS NI NOMBRES QUE LA AUDIENCIA NO CONOCE. Escríbelas completas (PMA → Programa Mundial de Alimentos) o cámbialas por una descripción ("el mayor productor de cacao del mundo" en vez de "Costa de Marfil, según Sodexam"). A una persona preséntala con nombre y rol en cada lámina donde aparezca, porque cada lámina se lee sola: "el experto Jim Ruiz", "Claudia Roldán, ganadera en Córdoba", "el productor Milton Calle"; nunca "Ruiz" o "Calle" solos.
 - SIN JERGA SIN EXPLICAR. Si usas un término técnico ("materia seca", "silvopastoril", "revaluación"), explícalo en la misma frase o reemplázalo por lo que significa.
 - VOZ DE ALGUIEN QUE CUENTA, no de un informe: "Brasil vende más barato que Perú", no "se evidencia una diferencia de precios a favor de Brasil".
-- TÍTULOS DE 8 A 14 PALABRAS, máximo 90 caracteres, sin punto final. Cuerpo de 1 o 2 frases cortas, máximo unas 30 palabras.
+- TÍTULOS DE 8 A 14 PALABRAS, máximo 90 caracteres, sin punto final. Cuerpo de 1 o 2 frases cortas: máximo 30 palabras (unos 200 caracteres) en las láminas 2 y 3, que llevan foto y tienen poco espacio; la lámina 4 admite hasta 40.
 - NO INVENTES datos ni consecuencias que la noticia no sostiene. Si no sabes si algo afecta el precio en Colombia, no lo digas.
 - Toma postura con datos, no con adjetivos. Sin hipérboles ni emojis salvo que el tono lo pida. Nada de "No es X, es Y" ni de frases abstractas sin actor.
 
@@ -217,7 +217,7 @@ Cuenta algo nuevo, que la persona todavía no sabe: la causa o el porqué, o la 
 LÁMINA 4: EL CIERRE QUE ABRE
 Tiene dos trabajos a la vez: cerrar la historia y abrir una sola pregunta que solo la nota completa responde. Si no cierras, frustras; si no abres, nadie va a la nota.
 - TÍTULO = LA CONCLUSIÓN: qué significa la noticia, no qué pasó. Puede ser la lección ("Para competir con Brasil, el mango peruano no puede subir precios"), la consecuencia ("Sin papeles de la tierra, el café podría quedarse fuera de Europa"), el giro o el costo humano ("Hay ganaderos que hoy pierden plata por cada litro de leche"). Es una afirmación, no una pregunta, y no repite la lámina 1.
-- CUERPO (25 a 30 palabras): la primera frase da el dato o la fuente que respalda la conclusión; la última frase es la apertura (más abajo te digo cómo escribirla según haya o no nota).
+- CUERPO (25 a 40 palabras): la primera frase da el dato o la fuente que respalda la conclusión; la última frase es la apertura (más abajo te digo cómo escribirla según haya o no nota).
 - Errores: cerrar con un dato más en vez de una conclusión; una apertura vaga ("hay mucho más por saber", "esto apenas comienza"); abrir tres preguntas; poner "link en la bio" o "síguenos" (eso lo dice la lámina de cierre); repetir siempre la misma fórmula ("El reto ahora es…").
 
 QUÉ SE QUEDA PARA LA NOTA
@@ -229,7 +229,7 @@ EL CAPTION
 TIPO DE LÁMINA: "photo_hook" la 1 (solo hook); "text" las otras tres (título y cuerpo).
 
 LAS FOTOS: TÚ DECIDES QUÉ SE BUSCA
-Las láminas 1, 2 y 3 llevan foto de banco; la 4 va solo con texto. Las buscas tú, porque eres el único que sabe de qué habla el carrusel. Devuelve "fotos": una lista de 5 a 8 búsquedas, EN INGLÉS, en orden de importancia. La segunda búsqueda es para la lámina 2, que también tiene que enganchar en frío: que muestre algo distinto a la portada (el producto en primer plano, el trabajo, la escena del problema), nunca un paisaje, un cielo o una planta decorativa.
+Las láminas 1, 2 y 3 llevan foto de banco; la 4 va solo con texto. Las buscas tú, porque eres el único que sabe de qué habla el carrusel. Devuelve "fotos": una lista de 5 a 8 búsquedas, EN INGLÉS, en orden de importancia. La segunda búsqueda es para la lámina 2 y la tercera para la lámina 3: que cada una muestre algo distinto a la portada y entre sí (el producto en primer plano, el cultivo, la maquinaria, el puerto, la escena del problema), nunca un paisaje genérico, un cielo o una planta decorativa, y sin personas como tema (nada de "farmer", "worker", "people": traen retratos de desconocidos).
 
 REGLAS DE LAS BÚSQUEDAS
 - LITERALES AL ASUNTO. Si la noticia es de cannabis, todas son de cannabis: "cannabis plant", "medical marijuana pharmacy". Si es de leche: "dairy cow", "milk bottles", "milking parlor". Si es de pesca: "artisanal fishing boat", "fisherman net".
@@ -303,5 +303,27 @@ ${bloqueVariables(input.variables)}`
 
   const r = await llamarClaude({ accountId, model, system, prompt, maxTokens: 3600 })
   if (!r.ok) throw new Error(r.error)
-  return { respuesta: parsearJSONDeClaude(r.texto), uso: r.uso }
+  const respuesta = parsearJSONDeClaude(r.texto)
+
+  // Con la estructura de 4 laminas, a veces el modelo devuelve solo 2 o 3 y el
+  // carrusel sale cojo (sin desarrollo o sin el cierre que abre). Se le pide una
+  // vez mas recordandoselo; si vuelve a fallar, se usa lo que haya.
+  const laminas = (respuesta as { slides?: unknown[] } | null)?.slides
+  if (conApertura && Array.isArray(laminas) && laminas.length < 4) {
+    const otra = await llamarClaude({
+      accountId,
+      model,
+      system,
+      prompt: `${prompt}\n\nIMPORTANTE: una respuesta anterior trajo ${laminas.length} láminas. El carrusel lleva exactamente 4: gancho, segundo gancho, desarrollo y el cierre que abre.`,
+      maxTokens: 3600,
+    })
+    if (otra.ok) {
+      const segunda = parsearJSONDeClaude(otra.texto)
+      const uso = { entrada: r.uso.entrada + otra.uso.entrada, salida: r.uso.salida + otra.uso.salida }
+      const n = (segunda as { slides?: unknown[] } | null)?.slides
+      if (Array.isArray(n) && n.length > laminas.length) return { respuesta: segunda, uso }
+      return { respuesta, uso }
+    }
+  }
+  return { respuesta, uso: r.uso }
 }

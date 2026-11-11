@@ -512,7 +512,11 @@ function Periodico(l: LaminaNoticia) {
   // Interior: la cabecera pequena arriba, foto a lo ancho si toca y el texto.
   const conFoto = l.composicion === "foto" && l.foto
   const t = cortar(titular, 110)
-  const cuerpo = cortar(limpio(l.cuerpo), conFoto ? 230 : 420)
+  // Con foto hay poco espacio: si el cuerpo es largo se achica la letra antes
+  // de cortarlo, para no dejar una frase a medias ("para…").
+  const textoCuerpo = limpio(l.cuerpo)
+  const cuerpoLargo = conFoto && textoCuerpo.length > 200
+  const cuerpo = cortar(textoCuerpo, conFoto ? 320 : 420)
   return (
     <div style={base}>
       <Cabecera logo={logo} acento={acento} alto={64} />
@@ -521,7 +525,7 @@ function Periodico(l: LaminaNoticia) {
         {l.nicho ? <div style={{ display: "flex", fontSize: 26, letterSpacing: 4, textTransform: "uppercase", color: acento, fontWeight: 600, marginBottom: 22 }}>{cortar(l.nicho, 34)}</div> : null}
         <div style={{ display: "flex", textAlign: "center", justifyContent: "center", fontFamily: PE.serif, fontWeight: 500, fontSize: conFoto ? tamano(t, [[45, 66], [75, 58], [999, 50]]) : tamano(t, [[45, 80], [75, 70], [999, 60]]), lineHeight: 1.12 }}>{t}</div>
         <div style={{ display: "flex", width: 200, height: 5, background: acento, marginTop: 26, marginBottom: 26 }} />
-        {cuerpo ? <div style={{ display: "flex", textAlign: "center", fontSize: conFoto ? 34 : 40, lineHeight: 1.4, color: PE.suave }}>{cuerpo}</div> : null}
+        {cuerpo ? <div style={{ display: "flex", textAlign: "center", fontSize: conFoto ? (cuerpoLargo ? 29 : 34) : 40, lineHeight: conFoto && cuerpoLargo ? 1.32 : 1.4, color: PE.suave }}>{cuerpo}</div> : null}
       </div>
       {paginaPie}
     </div>
