@@ -98,6 +98,9 @@ export type ImagenEncontrada = {
  * ingesta. Se piden varias y se filtra: las muy pequeñas se ven rotas al
  * ampliarlas y las muy apaisadas no encajan en un circulo.
  */
+const BANCOS_CON_MARCA =
+  /(shutterstock|istockphoto|gettyimages|alamy|dreamstime|depositphotos|123rf|adobestock|stock\.adobe|bigstockphoto|canstockphoto|agefotostock|vecteezy|freepik|colourbox|pond5|stocksy)\./i
+
 export async function searchImage(
   accountId: string,
   consulta: string,
@@ -130,6 +133,8 @@ export async function searchImage(
       if (!/^https?:\/\//.test(i.url)) return false
       // El SVG se descarta: Satori solo dibuja mapas de bits.
       if (/\.svg($|\?)/i.test(i.url)) return false
+      // Los bancos de pago sirven la vista previa con su marca de agua encima.
+      if (BANCOS_CON_MARCA.test(i.url)) return false
       if (i.ancho < 200 || i.alto < 200) return false
       // Dentro de un circulo, algo mas ancho que 2:1 se recorta hasta no
       // reconocerse. Se prefiere lo cuadrado.
