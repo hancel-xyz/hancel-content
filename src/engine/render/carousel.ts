@@ -201,6 +201,8 @@ export function parseInstagramResponse(respuesta: unknown): {
   fotos: string[]
   /** La cosa concreta que va recortada en la portada. Vacio = sin elemento. */
   elemento: string
+  /** La categoria de la noticia que va sobre el titular ("Dólar", "Banano Costa Rica"). Vacio = la del segmento. */
+  etiqueta: string
 } {
   const raiz = (respuesta ?? {}) as Record<string, unknown>
 
@@ -246,7 +248,12 @@ export function parseInstagramResponse(respuesta: unknown): {
       ? raiz.elemento.trim()
       : ""
 
-  return { caption, hashtags, slides, fotos, elemento }
+  // La etiqueta la escribe quien redacta, porque la del segmento a veces no
+  // corresponde ("PRECIO CAFÉ COLOMBIA" en una noticia del dolar).
+  const etiqueta =
+    typeof raiz.etiqueta === "string" && raiz.etiqueta.trim().length > 1 ? arreglarOrtografia(raiz.etiqueta.trim()).slice(0, 34) : ""
+
+  return { caption, hashtags, slides, fotos, elemento, etiqueta }
 }
 
 /**
@@ -265,14 +272,14 @@ export async function generarCarrusel(
   /** Dibuja ademas la portada suelta que usa Facebook. */
   conPortadaFacebook = false
 ): Promise<CarouselPayload> {
-  const { caption, hashtags, slides, fotos, elemento } = parseInstagramResponse(respuesta)
+  const { caption, hashtags, slides, fotos, elemento, etiqueta } = parseInstagramResponse(respuesta)
 
   // Plogy tiene su propia estructura de laminas, no la clasica recoloreada.
   if (estilo.plantilla === "plogy") {
-    return generarCarruselPlogy(pieceKey, { caption, hashtags, slides, fotos, elemento }, news, estilo, nichos, conPortadaFacebook)
+    return generarCarruselPlogy(pieceKey, { caption, hashtags, slides, fotos, elemento, etiqueta }, news, estilo, nichos, conPortadaFacebook)
   }
   if (estilo.plantilla === "editorial" || estilo.plantilla === "impacto" || estilo.plantilla === "periodico") {
-    return generarCarruselAlterno(pieceKey, { caption, hashtags, slides, fotos, elemento }, news, estilo, nichos, conPortadaFacebook)
+    return generarCarruselAlterno(pieceKey, { caption, hashtags, slides, fotos, elemento, etiqueta }, news, estilo, nichos, conPortadaFacebook)
   }
 
   // El cierre es una lamina de marca, no del guion: se añade aqui y no se le
@@ -352,8 +359,9 @@ export async function generarCarrusel(
   const sinFotoPortada = fotoPortada === null
 
   // El antetitulo situa el post antes de que nadie lea el titular. Sale del tema
-  // del segmento, que es lo mas concreto que la noticia trae siempre.
-  const etiqueta = (news?.tema ?? news?.niche ?? "").trim() || null
+  // del segmento, que es lo mas concreto que la noticia trae siempre, salvo que
+  // el redactor haya escrito una que corresponda mejor.
+  const antetitulo = (etiqueta || news?.tema || news?.niche || "").trim() || null
 
   const imagenes: Buffer[] = []
 
@@ -371,7 +379,7 @@ export async function generarCarrusel(
           slide,
           variante: variantes[indice],
           foto,
-          etiqueta,
+          etiqueta: antetitulo,
           logo,
           inserto: indice === 0 ? inserto : null,
           insertoPos,
@@ -398,7 +406,7 @@ export async function generarCarrusel(
         slide: slides[0],
         variante: variantes[0],
         foto: fotoPortada,
-        etiqueta,
+        etiqueta: antetitulo,
         // La misma portada, con lo mismo encima. Se dibuja aparte solo para
         // quitarle la numeracion y el "desliza", que en una imagen suelta
         // invitan a un gesto que no existe; todo lo demas tiene que venir
@@ -641,9 +649,11 @@ async function generarCarruselAlterno(
   const terminos = fotos.length > 0 ? fotos : terminosDeBusqueda(news, nichos, estilo.fotosLiterales)
   const banco = new BancoDeFotos(terminos)
   const creditos: { autor: string; url: string }[] = []
-  const delBanco = async (): Promise<string | null> => {
+  // Cada lamina con foto pide la suya a SU busqueda (la portada a la primera,
+  // la lamina 2 a la segunda...), como le promete el prompt al modelo.
+  const delBanco = async (lamina: number): Promise<string | null> => {
     if (!estilo.usarFotos || !pexelsConfigurado()) return null
-    const elegida = await banco.siguiente()
+    const elegida = await banco.paraLamina(lamina)
     if (!elegida) return null
     const descargada = await descargarFotoPexels(elegida)
     if (descargada && elegida.autor) creditos.push({ autor: elegida.autor, url: elegida.autorUrl })
@@ -659,13 +669,14 @@ async function generarCarruselAlterno(
   const insertoAjuste = hallado && hallado.proporcion > 0.62 && hallado.proporcion < 1.6 ? ("llenar" as const) : ("encajar" as const)
   const insertoPos = Math.floor(Math.random() * 4)
   // El indicador del nicho, igual que en la clasica: el tema del segmento.
-  const nicho = (news?.tema ?? news?.niche ?? "").trim()
+  // La que escribio el redactor manda: el segmento no siempre corresponde.
+  const nicho = (guion.etiqueta || news?.tema || news?.niche || "").trim()
   const total = slides.length + 1
   const titularDe = (s: Slide) => (s.type === "photo_hook" ? (s.hook ?? "") : (s.title ?? ""))
   const reparto = repartirNoticia(Math.max(0, slides.length - 1), estilo.usarFotos && pexelsConfigurado())
 
   const hecho = await fotoDelHecho(news)
-  const fotoPortada = hecho?.foto ?? (await delBanco()) ?? (await descargarFoto(news?.image_url))
+  const fotoPortada = hecho?.foto ?? (await delBanco(0)) ?? (await descargarFoto(news?.image_url))
   // La fecha de la noticia, para el pie del estilo periodico ("28 de octubre de 2026").
   const fecha = new Date(news?.created_at ?? Date.now()).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Bogota" })
   const comun = { plantilla, nicho, fecha, total, logoClaro, logoOscuro, estilo, insertoForma, insertoAjuste, insertoPos } as const
@@ -678,7 +689,7 @@ async function generarCarruselAlterno(
         composicion,
         titular: titularDe(slide),
         cuerpo: slide.type === "text" ? slide.body : null,
-        foto: i === 0 ? fotoPortada : composicion === "foto" ? await delBanco() : null,
+        foto: i === 0 ? fotoPortada : composicion === "foto" ? await delBanco(i) : null,
         inserto: i === 0 ? (hallado?.imagen ?? null) : null,
         n: i + 1,
       })

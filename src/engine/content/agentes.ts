@@ -226,6 +226,9 @@ Decídelo antes de escribir, no al final. Haz la lista de lo que trae la noticia
 EL CAPTION
 2 o 3 frases: lo esencial de la noticia en una frase y una pregunta concreta a quien lee que invite a comentar (sobre su finca, su cultivo, su negocio o su experiencia), nunca genérica tipo "¿qué opinas?". No pongas "link en la bio" ni el link: el sistema lo agrega.
 
+LA ETIQUETA
+Va arriba del titular en todas las láminas y le dice en frío a quien llega de qué trata. Devuelve "etiqueta": 1 a 3 palabras, la categoría limpia de ESTA noticia ("Dólar", "Cacao", "Café", "Banano Costa Rica", "Ganadería"). Tiene que corresponder: una noticia del dólar no lleva "Precio café Colombia", y una de otro país nombra ese país y no Colombia.
+
 TIPO DE LÁMINA: "photo_hook" la 1 (solo hook); "text" las otras tres (título y cuerpo).
 
 LAS FOTOS: TÚ DECIDES QUÉ SE BUSCA
@@ -250,15 +253,25 @@ Devuelve "elemento": UNA búsqueda corta, EN ESPAÑOL, de la cosa concreta.
 Esta búsqueda va a un buscador de internet, no a un banco de fotos: pide la cosa exacta con su nombre propio.
 
 RESPONDE SOLO con este JSON, sin texto alrededor:
-{"slide_count":4,"caption":"<2 o 3 frases: lo esencial y una pregunta concreta para comentar>","hashtags":["<3 a 6 en minúscula sin espacios>"],"fotos":["<5 a 8 búsquedas en inglés>"],"elemento":"<una búsqueda en español de la cosa concreta>","slides":[{"n":1,"type":"photo_hook","hook":"<8 a 14 palabras, máx 95 caracteres>"},{"n":2,"type":"text","title":"<8 a 14 palabras, máx 90 caracteres>","body":"<1 o 2 frases>"}]}
+{"slide_count":4,"caption":"<2 o 3 frases: lo esencial y una pregunta concreta para comentar>","hashtags":["<3 a 6 en minúscula sin espacios>"],"fotos":["<5 a 8 búsquedas en inglés>"],"elemento":"<una búsqueda en español de la cosa concreta>","etiqueta":"<1 a 3 palabras, la categoría de esta noticia>","slides":[{"n":1,"type":"photo_hook","hook":"<8 a 14 palabras, máx 95 caracteres>"},{"n":2,"type":"text","title":"<8 a 14 palabras, máx 90 caracteres>","body":"<1 o 2 frases>"}]}
 
-El array slides va en orden y tiene 4 elementos: el primero photo_hook, los otros tres text. Antes de responder relee y confirma: que no hay guiones largos; que cada título nombra su tema y se entiende solo; que ningún título pasa de 90 caracteres ni el hook de 95; que la lámina 2 tiene un ángulo distinto al de la portada; que la lámina 4 cierra con una conclusión y abre una sola pregunta; y que el texto lleva todas sus tildes y sus eñes.`
+El array slides va en orden y tiene 4 elementos: el primero photo_hook, los otros tres text. Antes de responder relee y confirma: que no hay guiones largos; que cada título nombra su tema y se entiende solo; que ningún título pasa de 90 caracteres ni el hook de 95; que la lámina 2 tiene un ángulo distinto al de la portada; que cada persona lleva su rol en cada lámina donde aparece ("el experto Jim Ruiz", nunca "Jim Ruiz" o "Ruiz" solos); que todo término técnico está explicado; que la lámina 4 cierra con una conclusión y abre una sola pregunta; y que el texto lleva todas sus tildes y sus eñes.`
 
 /** Como termina la lamina 4 cuando hay nota del portal: con una promesa que la nota cumple. */
 const APERTURA_CON_NOTA = `
 LA APERTURA DE LA LÁMINA 4
 La última frase del cuerpo de la lámina 4 empieza por "La nota" ("La nota explica…", "La nota detalla…", "La nota cuenta…") y promete UNA cosa concreta que está en esta nota y que el carrusel no contó: qué hacer, una lista, las cifras por región, lo que cuenta un protagonista, lo que sigue. Antes de escribirla, busca esa información en la nota de arriba: si no está, promete otra cosa que sí esté. "La nota explica qué tendría que cambiar Perú" sirve; "La nota tiene más detalles" no.
 `
+
+/**
+ * El carrusel lleva 4 laminas de contenido (5 con el cierre). Si el modelo trae
+ * mas, se quedan las tres primeras y la ultima, que es el cierre que abre.
+ */
+function recortar(respuesta: unknown): unknown {
+  const r = respuesta as { slides?: unknown[]; slide_count?: number } | null
+  if (!r || !Array.isArray(r.slides) || r.slides.length <= 4) return respuesta
+  return { ...r, slide_count: 4, slides: [...r.slides.slice(0, 3), r.slides[r.slides.length - 1]] }
+}
 
 /** Sin nota publicada no hay a donde mandar: la lamina 4 abre la conversacion. */
 const APERTURA_SIN_NOTA = `
@@ -321,9 +334,9 @@ ${bloqueVariables(input.variables)}`
       const segunda = parsearJSONDeClaude(otra.texto)
       const uso = { entrada: r.uso.entrada + otra.uso.entrada, salida: r.uso.salida + otra.uso.salida }
       const n = (segunda as { slides?: unknown[] } | null)?.slides
-      if (Array.isArray(n) && n.length > laminas.length) return { respuesta: segunda, uso }
+      if (Array.isArray(n) && n.length > laminas.length) return { respuesta: recortar(segunda), uso }
       return { respuesta, uso }
     }
   }
-  return { respuesta, uso: r.uso }
+  return { respuesta: conApertura ? recortar(respuesta) : respuesta, uso: r.uso }
 }

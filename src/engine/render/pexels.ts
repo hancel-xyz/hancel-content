@@ -125,7 +125,42 @@ export class BancoDeFotos {
 
   constructor(terminos: string[], orientacion: Orientacion = "vertical") {
     this.terminosPendientes = [...terminos]
+    this.terminos = [...terminos]
     this.orientacion = orientacion
+  }
+
+  private porTermino = new Map<number, Promise<Foto[]>>()
+  private autores = new Set<string>()
+  private terminos: string[]
+
+  /**
+   * La foto de una lamina concreta: sale de SU busqueda (la lamina 2 de la
+   * segunda, la 3 de la tercera), no de lo que sobro de la primera. Asi cada
+   * lamina muestra algo distinto y no tres tomas casi iguales del mismo tema.
+   * Evita tambien al fotografo de una foto ya usada: sus series son la misma
+   * escena desde otro angulo. Si esa busqueda no da nada, sigue con el resto.
+   */
+  async paraLamina(indice: number): Promise<Foto | null> {
+    const total = this.terminos.length
+    let respaldo: Foto[] = []
+    for (let k = 0; k < total; k++) {
+      const i = (indice + k) % total
+      if (!this.porTermino.has(i)) this.porTermino.set(i, buscarFotos(this.terminos[i], this.orientacion))
+      const pozo = (await this.porTermino.get(i)) ?? []
+      const libres = pozo.filter((f) => !this.usadas.has(f.id))
+      const deOtro = libres.filter((f) => !f.autor || !this.autores.has(f.autor))
+      if (deOtro.length > 0) return this.tomar(deOtro)
+      if (respaldo.length === 0) respaldo = libres
+    }
+    // Todas las que quedan son de fotografos ya usados: mejor eso que nada.
+    return respaldo.length > 0 ? this.tomar(respaldo) : null
+  }
+
+  private tomar(opciones: Foto[]): Foto {
+    const elegida = opciones[Math.floor(Math.random() * Math.min(opciones.length, CANDIDATAS))]
+    this.usadas.add(elegida.id)
+    if (elegida.autor) this.autores.add(elegida.autor)
+    return elegida
   }
 
   /** `null` cuando no queda ninguna foto nueva que ofrecer. */
