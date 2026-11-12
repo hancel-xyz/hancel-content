@@ -66,6 +66,12 @@ Esta cuenta no cubre politica. Si el eje de la noticia es politico, lleva "polit
 NO es politica (se califica normal): una medida concreta ya adoptada o con fecha y monto (decreto, resolucion, arancel, subsidio, linea de credito, precio, programa), contada por lo que cambia para el productor; cifras oficiales; informes de gremios.
 LA PRUEBA: si lo noticioso es una decision que ya cambia algo para el sector, es sector. Si lo noticioso es la disputa, la presion o el posicionamiento, es politica.
 
+FUERA DEL NICHO: SCORE 1, SIEMPRE
+El eje de la noticia tiene que ser el nicho que se indica, no solo tocarlo. Si el sujeto del hecho es otro sector (salud publica, seguridad, deportes, entretenimiento, la economia general sin efecto concreto sobre el nicho), relevance_score = 1 aunque comparta una palabra clave o una causa con el nicho, y aunque la cifra sea grande.
+- Una epidemia de dengue por El Niño es salud publica, no agro: score 1. Lo que El Niño le hace a los cultivos, al ganado o al agua de riego si es agro.
+- Un accidente en una carretera rural es seguridad vial, no agro. El cierre de esa via que deja la cosecha sin salir si es agro.
+LA PRUEBA: ¿quien lee esto por el nicho (un productor, un comprador, alguien del sector) cambia algo de su negocio con esta noticia? Si no, esta fuera del nicho.
+
 FILTRO DURO: si NO es un hecho verificable (opinion, prediccion sin gatillo, listicle generico), relevance_score = 1-2 sin importar lo demas.
 
 content_fetch_status: "success" si el material recolectado era sustancioso, "partial" si apenas habia mas que el snippet, "failed" si no llego nada.
@@ -168,6 +174,12 @@ export async function analizarPendientes(
     return { analizadas: 0, fallidas: 0, errores: [], uso: { entrada: 0, salida: 0 } }
 
   const model = (await modelosClaude(accountId)).analisis
+  // Los nichos de la cuenta dicen de que sector es: sin ellos, "clima y agua"
+  // a secas dejaba pasar una epidemia de dengue por El Niño en una cuenta de agro.
+  const { nichosDeCuenta } = await import("../redaccion/nicho")
+  const nichosCuenta = (await nichosDeCuenta(accountId))
+    .map((n) => `- ${n.nombre}${n.descripcion ? `: ${n.descripcion}` : ""}`)
+    .join("\n")
   const { timezone } = await getSettings(accountId)
   const hoy = new Date().toLocaleDateString("es-CO", { timeZone: timezone, weekday: "long", day: "numeric", month: "long", year: "numeric" })
   let analizadas = 0
@@ -204,7 +216,9 @@ export async function analizarPendientes(
 - fuente: ${noticia.source ?? "desconocida"}
 - enlace: ${noticia.link}
 - nicho al que pertenece (para el FIT): ${noticia.niche} / ${noticia.tema}
-- snippet original: ${noticia.snippet ?? "(sin snippet)"}
+${nichosCuenta ? `- la cuenta cubre SOLO estos nichos (el FIT y FUERA DEL NICHO se juzgan contra ellos):
+${nichosCuenta}
+` : ""}- snippet original: ${noticia.snippet ?? "(sin snippet)"}
 - fecha que reporta el buscador: ${noticia.date_serper ?? "(sin fecha)"} (traida el ${new Date(noticia.created_at).toISOString().slice(0, 10)})
 - hoy es: ${hoy}
 

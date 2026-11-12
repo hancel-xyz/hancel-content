@@ -131,7 +131,13 @@ export async function llamarClaude(opciones: LlamadaClaude): Promise<ResultadoCl
           role: "user",
           content: opciones.imagenes?.length
             ? [
-                ...opciones.imagenes.map((url) => ({ type: "image", source: { type: "url", url } })),
+                ...opciones.imagenes.map((url) => {
+                  // Una imagen ya descargada (data URI) va en base64; una publica, por url.
+                  const datos = url.match(/^data:(image\/[a-z+]+);base64,(.+)$/i)
+                  return datos
+                    ? { type: "image", source: { type: "base64", media_type: datos[1].toLowerCase(), data: datos[2] } }
+                    : { type: "image", source: { type: "url", url } }
+                }),
                 { type: "text", text: opciones.prompt },
               ]
             : opciones.prompt,

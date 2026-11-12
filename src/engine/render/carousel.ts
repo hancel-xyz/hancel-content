@@ -477,7 +477,9 @@ export { MAX_SLIDES, MIN_SLIDES }
  */
 export async function buscarInserto(
   consulta: string,
-  accountId: string
+  accountId: string,
+  /** La foto de fondo de la portada: el elemento no puede repetir lo que ya se ve en ella. */
+  fotoPrincipal: string | null = null
 ): Promise<{ imagen: string; proporcion: number } | null> {
   if (!consulta) return null
 
@@ -486,30 +488,137 @@ export async function buscarInserto(
     const candidatas = await searchImage(accountId, consulta)
     if (candidatas.length === 0) return null
 
-    // Primero las que mejor encajan en un hueco cuadrado. Una muy apaisada hay
-    // que encajarla con margenes y se ve pequeña dentro del circulo.
-    const porForma = [...candidatas].sort(
-      (a, b) => Math.abs(Math.log(a.ancho / a.alto)) - Math.abs(Math.log(b.ancho / b.alto))
-    )
-
-    // Y entre las mejores, una al azar. Coger siempre la primera hacia que dos
-    // noticias del mismo gremio salieran con exactamente la misma imagen, y en
-    // un feed eso se lee como contenido repetido aunque el texto sea distinto.
-    const buenas = porForma.slice(0, 6)
-    for (let i = buenas.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[buenas[i], buenas[j]] = [buenas[j], buenas[i]]
+    // Primero las que parecen ser lo buscado (su titulo nombra lo que se pidio)
+    // y, entre iguales, las mas cuadradas: el hueco es cuadrado.
+    const claves = palabrasClave(consulta)
+    const relevancia = (titulo: string) => {
+      const t = sinTildes(titulo.toLowerCase())
+      return claves.filter((c) => t.includes(c)).length
     }
+    const forma = (c: { ancho: number; alto: number }) => Math.abs(Math.log(c.ancho / c.alto))
+    const ordenadas = [...candidatas].sort((x, y) => relevancia(y.titulo) - relevancia(x.titulo) || forma(x) - forma(y))
 
-    for (const imagen of buenas) {
-      const descargada = await descargarInserto(imagen.url)
-      if (descargada) return { imagen: descargada, proporcion: imagen.ancho / imagen.alto }
+    // Se bajan las primeras que se dejen (muchas bloquean la descarga o vienen vacias).
+    const bajadas: { imagen: string; proporcion: number; titulo: string }[] = []
+    for (const c of ordenadas.slice(0, 9)) {
+      if (bajadas.length >= 5) break
+      const imagen = await descargarInserto(c.url)
+      if (imagen) bajadas.push({ imagen, proporcion: c.ancho / c.alto, titulo: c.titulo })
     }
+    if (bajadas.length === 0) return null
+
+    // Un modelo mira las candidatas y la foto de la portada y elige la que es de
+    // verdad lo buscado. Antes se cogia una al azar entre las mas cuadradas, y
+    // asi salio el escudo de un club de futbol turco para Asocaña, o el mismo
+    // logo que ya aparecia en la foto. Si ninguna sirve, mejor sin elemento.
+    const elegida = await elegirInserto(accountId, consulta, bajadas.map((b) => b.imagen), fotoPrincipal)
+    if (elegida === null) {
+      // Sin respuesta del modelo: solo se arriesga con una cuyo titulo nombre lo buscado.
+      const segura = bajadas.find((b) => relevancia(b.titulo) >= Math.min(2, claves.length))
+      return segura ? { imagen: segura.imagen, proporcion: segura.proporcion } : null
+    }
+    if (elegida === 0) return null
+    const b = bajadas[elegida - 1]
+    return b ? { imagen: b.imagen, proporcion: b.proporcion } : null
   } catch {
     // Una busqueda caida no puede tumbar el carrusel: es un adorno, no el post.
   }
 
   return null
+}
+
+const RELLENO = new Set(["logo", "de", "del", "la", "el", "los", "las", "y", "en", "para", "con", "colombia", "colombiano", "colombiana"])
+
+function sinTildes(t: string): string {
+  return t.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+}
+
+/** Las palabras que identifican lo buscado: "logo Asocaña Colombia" -> ["asocana"]. */
+function palabrasClave(consulta: string): string[] {
+  return sinTildes(consulta.toLowerCase())
+    .split(/[^a-z0-9]+/)
+    .filter((p) => p.length > 2 && !RELLENO.has(p))
+}
+
+/** Achica una imagen para mostrarsela al modelo: menos tokens, la misma decision. */
+async function miniatura(dataUri: string, lado: number): Promise<string | null> {
+  try {
+    const sharp = (await import("sharp")).default
+    const buf = Buffer.from(dataUri.split(",")[1] ?? "", "base64")
+    const jpg = await sharp(buf).flatten({ background: "#ffffff" }).resize(lado, lado, { fit: "inside" }).jpeg({ quality: 80 }).toBuffer()
+    return `data:image/jpeg;base64,${jpg.toString("base64")}`
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Si la foto principal ya muestra lo buscado (el logo en la cola de un avion, en
+ * un letrero, en un empaque). Es una pregunta sola y simple a proposito: mezclada
+ * con la eleccion de candidatas, el modelo la contestaba distinto cada vez.
+ */
+async function yaEnLaFoto(accountId: string, consulta: string, principal: string): Promise<boolean> {
+  const { llamarClaude, parsearJSONDeClaude } = await import("../claude/messages")
+  const que = consulta.replace(/^logo\s+/i, "")
+  const r = await llamarClaude({
+    accountId,
+    model: "claude-sonnet-5-5",
+    system: "Miras una foto y respondes solo JSON.",
+    prompt: `¿En esta foto se ve, en cualquier parte y aunque sea pequeño (un letrero, la cola o el fuselaje de un avión, un camión, un empaque, una pancarta, ropa, un banner, una esquina), el logo, el símbolo o el nombre de «${que}»? Si se busca un objeto, ¿la foto ya lo muestra?
+Responde SOLO: {"se_ve": <true|false>}`,
+    imagenes: [principal],
+    maxTokens: 30,
+    timeoutMs: 30_000,
+  })
+  if (!r.ok) return false
+  return (parsearJSONDeClaude(r.texto) as { se_ve?: unknown } | null)?.se_ve === true
+}
+
+/**
+ * Le pregunta a un modelo cual de las candidatas es lo buscado. Devuelve el
+ * numero (desde 1), 0 si ninguna sirve (o si la foto ya lo muestra), o null si
+ * no se pudo preguntar.
+ */
+async function elegirInserto(accountId: string, consulta: string, candidatas: string[], fotoPrincipal: string | null): Promise<number | null> {
+  try {
+    const { llamarClaude, parsearJSONDeClaude } = await import("../claude/messages")
+    // La principal va grande: un logo en la cola de un avion o en un letrero es pequeño.
+    const principal = fotoPrincipal ? await miniatura(fotoPrincipal, 1280) : null
+    if (principal && (await yaEnLaFoto(accountId, consulta, principal))) return 0
+    const minis: string[] = []
+    for (const c of candidatas) {
+      const m = await miniatura(c, 384)
+      if (!m) return null
+      minis.push(m)
+    }
+    const r = await llamarClaude({
+      accountId,
+      // Sonnet y no Haiku: Haiku aceptaba simbolos sueltos y banners con fotos dentro.
+      model: "claude-sonnet-5-5",
+      system: "Eliges la imagen pequeña que acompaña la portada de una noticia. Respondes solo JSON.",
+      prompt: `Las imágenes son las candidatas, numeradas desde 1.
+
+Se buscó: «${consulta}».
+
+Elige la candidata que muestre EXACTAMENTE eso. Descarta una candidata si:
+- no es lo buscado (otro logo, otra entidad, otra marca, otro producto, un escudo o logo de algo que no tiene que ver);
+- es un logo y no se lee el NOMBRE de la entidad buscada (un símbolo solo no sirve), o es una versión deformada o de otra entidad con nombre parecido;
+- es un logo y no está limpio y solo: trae una foto, un avión, un paisaje, un banner, o el logo de otra marca u organización al lado;
+- tiene marca de agua, texto de otro sitio web, o es una captura de pantalla;
+- está borrosa, vacía o casi en blanco.
+
+Si varias sirven, elige la más nítida y limpia. Si ninguna sirve, responde 0.
+Responde SOLO: {"elegida": <número de la candidata o 0>}`,
+      imagenes: minis,
+      maxTokens: 30,
+      timeoutMs: 40_000,
+    })
+    if (!r.ok) return null
+    const n = Number((parsearJSONDeClaude(r.texto) as { elegida?: unknown } | null)?.elegida)
+    return Number.isInteger(n) && n >= 0 && n <= candidatas.length ? n : null
+  } catch {
+    return null
+  }
 }
 
 // ------------------------------------------------------------------- plogy
@@ -664,7 +773,10 @@ async function generarCarruselAlterno(
   // El elemento recortado de la portada ("impacto" y "periodico"), con los
   // mismos criterios que la clasica: forma y esquina a suertes, y llenar solo
   // si la imagen es casi cuadrada.
-  const hallado = plantilla !== "editorial" && news?.account_id ? await buscarInserto(elemento, news.account_id) : null
+  const hecho = await fotoDelHecho(news)
+  const fotoPortada = hecho?.foto ?? (await delBanco(0)) ?? (await descargarFoto(news?.image_url))
+  // Se busca despues de tener la foto: el elemento no puede repetir lo que ya se ve en ella.
+  const hallado = plantilla !== "editorial" && news?.account_id ? await buscarInserto(elemento, news.account_id, fotoPortada) : null
   const insertoForma = Math.random() < 0.5 ? ("circulo" as const) : ("cuadrado" as const)
   const insertoAjuste = hallado && hallado.proporcion > 0.62 && hallado.proporcion < 1.6 ? ("llenar" as const) : ("encajar" as const)
   const insertoPos = Math.floor(Math.random() * 4)
@@ -674,9 +786,6 @@ async function generarCarruselAlterno(
   const total = slides.length + 1
   const titularDe = (s: Slide) => (s.type === "photo_hook" ? (s.hook ?? "") : (s.title ?? ""))
   const reparto = repartirNoticia(Math.max(0, slides.length - 1), estilo.usarFotos && pexelsConfigurado())
-
-  const hecho = await fotoDelHecho(news)
-  const fotoPortada = hecho?.foto ?? (await delBanco(0)) ?? (await descargarFoto(news?.image_url))
   // La fecha de la noticia, para el pie del estilo periodico ("28 de octubre de 2026").
   const fecha = new Date(news?.created_at ?? Date.now()).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Bogota" })
   const comun = { plantilla, nicho, fecha, total, logoClaro, logoOscuro, estilo, insertoForma, insertoAjuste, insertoPos } as const
