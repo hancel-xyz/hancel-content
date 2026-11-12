@@ -100,13 +100,34 @@ export async function descargarInserto(url: string | null | undefined): Promise<
     // cuadrado blanco con margen, para que el recorte del marco no lo corte.
     if (esPng) {
       const plano = await logoSobreBlanco(Buffer.from(bytes))
-      if (plano) return `data:image/png;base64,${plano.toString("base64")}`
+      if (plano) {
+        // Un logo blanco sobre transparente queda blanco sobre blanco: un
+        // recuadro vacio que se ve como un error. Se descarta y se prueba otra.
+        if (await casiVacia(plano)) return null
+        return `data:image/png;base64,${plano.toString("base64")}`
+      }
     }
+    if (await casiVacia(Buffer.from(bytes))) return null
 
     const tipo = esJpeg ? "image/jpeg" : "image/png"
     return `data:${tipo};base64,${Buffer.from(bytes).toString("base64")}`
   } catch {
     return null
+  }
+}
+
+/**
+ * Si la imagen, puesta sobre blanco, es casi de un solo color (un logo blanco
+ * sobre transparente, un PNG vacio). Mira cuanto varian los pixeles: en una
+ * imagen con contenido, la desviacion es alta en algun canal.
+ */
+async function casiVacia(imagen: Buffer): Promise<boolean> {
+  try {
+    const sharp = (await import("sharp")).default
+    const { channels } = await sharp(imagen).flatten({ background: "#ffffff" }).resize(64, 64, { fit: "inside" }).stats()
+    return channels.slice(0, 3).every((c) => c.stdev < 12)
+  } catch {
+    return false
   }
 }
 

@@ -20,7 +20,9 @@ import type { Estilo } from "./theme"
 export async function estamparCredito(
   png: Buffer,
   medio: string | null | undefined,
-  estilo: Estilo
+  estilo: Estilo,
+  /** Donde va la tira si no es la portada (la lamina 2 del periodico tiene la foto mas arriba). */
+  arriba?: number
 ): Promise<Buffer> {
   const texto = (medio ?? "").trim()
   if (!texto) return png
@@ -54,7 +56,7 @@ export async function estamparCredito(
     )
 
   const sobreBlanco: Record<string, number> = { periodico: 858, editorial: 748 }
-  const top = sobreBlanco[estilo.plantilla]
+  const top = arriba ?? sobreBlanco[estilo.plantilla]
   if (top !== undefined) {
     const margen = estilo.plantilla === "editorial" ? 44 : 20
     return sharp(png)

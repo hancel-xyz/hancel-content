@@ -689,7 +689,10 @@ async function generarCarruselAlterno(
         composicion,
         titular: titularDe(slide),
         cuerpo: slide.type === "text" ? slide.body : null,
-        foto: i === 0 ? fotoPortada : composicion === "foto" ? await delBanco(i) : null,
+        // La lamina 2 repite la foto real de la noticia, sin el elemento: quien
+        // llega en frio a ella ve la misma imagen que la nota del portal. La 3
+        // lleva una de banco, de su propia busqueda.
+        foto: i <= 1 && fotoPortada ? fotoPortada : composicion === "foto" ? await delBanco(i - 1) : null,
         inserto: i === 0 ? (hallado?.imagen ?? null) : null,
         n: i + 1,
       })
@@ -702,8 +705,11 @@ async function generarCarruselAlterno(
   const leerNota = Boolean(news?.id && (await linkDeLaNota(news.id)))
   imagenes.push(await renderNoticia({ ...comun, composicion: "cierre", titular: estilo.cierre.titulo, cuerpo: estilo.cierre.texto, leerNota, n: total }))
 
-  // La foto de prensa lleva su credito; la de banco no lo necesita.
+  // La foto de prensa lleva su credito, en la portada y en la lamina 2 que la
+  // repite; la de banco no lo necesita.
   if (hecho && imagenes[0]) imagenes[0] = await estamparCredito(imagenes[0], hecho.medio, estilo)
+  // En el periodico la foto de una lamina interior termina en y=706: el credito va justo debajo.
+  if (hecho && imagenes[1] && plantilla === "periodico" && reparto[0] === "foto") imagenes[1] = await estamparCredito(imagenes[1], hecho.medio, estilo, 710)
   const images = await subirCarrusel(pieceKey, imagenes)
   let portadaFacebook: string | undefined
   if (conPortadaFacebook && slides[0]) {
@@ -744,13 +750,16 @@ export async function fotoDelHecho(news: RawNews | null): Promise<{ foto: string
     const r = redaccion as { imagen_url?: string; imagen_credito?: { medio?: string | null } | null } | null
     const f = fuente as { imagen?: string | null; medio?: string | null } | null
     const vistas = new Set<string>()
-    const probar = async (url: unknown, medio: string | null | undefined) => {
+    const probar = async (url: unknown, medio: string | null | undefined, minimo = 600) => {
       if (typeof url !== "string" || vistas.has(url)) return null
       vistas.add(url)
-      const foto = await fotoGrande(url)
+      const foto = await fotoGrande(url, minimo)
       return foto ? { foto, medio: medio || f?.medio || news.source || null } : null
     }
-    const deRedaccion = await probar(r?.imagen_url, r?.imagen_credito?.medio)
+    // La foto de la nota del portal va SIEMPRE, mida lo que mida: el carrusel
+    // tiene que mostrar la misma foto que la persona encuentra al abrir la nota.
+    // Una de 560 px se descartaba por pequeña y la portada salia con una de banco.
+    const deRedaccion = await probar(r?.imagen_url, r?.imagen_credito?.medio, 0)
     if (deRedaccion) return deRedaccion
     const deFuente = await probar(f?.imagen, f?.medio)
     if (deFuente || !news.link) return deFuente
@@ -762,7 +771,7 @@ export async function fotoDelHecho(news: RawNews | null): Promise<{ foto: string
 }
 
 /** Baja una foto y la deja en JPEG si mide al menos 600 px de ancho. */
-async function fotoGrande(url: string): Promise<string | null> {
+async function fotoGrande(url: string, minimo = 600): Promise<string | null> {
   if (!/^https?:\/\//.test(url)) return null
   try {
     const res = await fetch(url, {
@@ -773,8 +782,9 @@ async function fotoGrande(url: string): Promise<string | null> {
     const sharp = (await import("sharp")).default
     const img = sharp(Buffer.from(await res.arrayBuffer()))
     const info = await img.metadata()
-    if (!info.width || info.width < 600) return null
-    const jpg = await img.rotate().resize({ width: 1600, withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 88 }).toBuffer()
+    if (!info.width || info.width < minimo) return null
+    // Las pequeñas se agrandan a 1080, el ancho de la lamina, para que no se vean borrosas de mas.
+    const jpg = await img.rotate().resize({ width: Math.max(1080, Math.min(info.width, 1600)) }).flatten({ background: "#ffffff" }).jpeg({ quality: 88 }).toBuffer()
     return `data:image/jpeg;base64,${jpg.toString("base64")}`
   } catch {
     return null
