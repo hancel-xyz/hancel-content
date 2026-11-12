@@ -33,6 +33,7 @@ const ABIERTAS = [
   "/api/redaccion/tick",
   "/api/publicacion/tick",
   "/api/metricas/tick",
+  "/api/precios/tick",
   // Los archivos publicos (laminas, logos, el HTML que importa Canva): los
   // leen Canva, Meta y el portal, sin sesion.
   "/api/archivo",
