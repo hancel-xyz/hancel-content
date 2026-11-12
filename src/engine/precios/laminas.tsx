@@ -89,12 +89,8 @@ function Portada({ d }: { d: DatosLaminas }) {
   const palabra = dir === "subieron" ? "SUBIERON" : "BAJARON"
   const tercera = r.periodo === "dia" ? cuando(r.referencia, d.hoy).toUpperCase() : "EN LA SEMANA"
   const kicker = r.periodo === "dia" ? `${fechaLarga(r.referencia)} · Centrales de abastos` : `Semana del ${rangoSemana(r)}`
-  const fomo =
-    dir === "subieron"
-      ? "Mira esto antes de ir a la plaza"
-      : r.periodo === "dia"
-        ? "Buen momento para comprar estos 5"
-        : "Los 5 que más se abarataron"
+  // Neutro: lo leen sobre todo productores, no compradores.
+  const fomo = "Así cambiaron los precios en las centrales"
   const [p1, p2, p3, p4, p5] = r.productos
 
   // El collage: el primero grande al centro, los demas alrededor.
