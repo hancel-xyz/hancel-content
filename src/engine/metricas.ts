@@ -40,7 +40,7 @@ type Fila = {
   account_id: string
   red: "instagram" | "facebook"
   post_id: string
-  origen: "noticia" | "estudio"
+  origen: "noticia" | "estudio" | "precios"
   pieza_id: string | null
   texto: string | null
   enlace: string | null
@@ -57,7 +57,7 @@ type Fila = {
   actualizado_at: string
 }
 
-type Origen = { origen: "noticia" | "estudio"; pieza_id: string }
+type Origen = { origen: "noticia" | "estudio" | "precios"; pieza_id: string }
 
 function huella(texto: string | null | undefined): string | null {
   const h = (texto ?? "").toLowerCase().replace(/\s+/g, " ").trim()
@@ -68,10 +68,11 @@ function huella(texto: string | null | undefined): string | null {
 async function publicadoDesdeHancel(accountId: string) {
   const supabase = supabaseAdmin()
   const desde = new Date(Date.now() - (VENTANA_DIAS + 7) * 86_400_000).toISOString()
-  const [piezas, estudio, pubs] = await Promise.all([
+  const [piezas, estudio, pubs, precios] = await Promise.all([
     supabase.from("content_pieces").select("id, network, linkedin_urn, payload").eq("account_id", accountId).eq("status", "published").gte("published_at", desde),
     supabase.from("studio_pieces").select("id, payload").eq("account_id", accountId).eq("status", "published").gte("published_at", desde),
     supabase.from("studio_publications").select("piece_id, buffer_post_id").eq("account_id", accountId).eq("status", "published").gte("created_at", desde),
+    supabase.from("precios_carruseles").select("id, instagram_id, facebook_id").eq("account_id", accountId).gte("created_at", desde),
   ])
   const porId = new Map<string, Origen>()
   const porTexto = new Map<string, Origen>()
@@ -87,6 +88,10 @@ async function publicadoDesdeHancel(accountId: string) {
   }
   for (const p of (pubs.data ?? []) as { piece_id: string; buffer_post_id: string | null }[]) {
     if (p.buffer_post_id) porId.set(p.buffer_post_id, { origen: "estudio", pieza_id: p.piece_id })
+  }
+  for (const p of (precios.data ?? []) as { id: string; instagram_id: string | null; facebook_id: string | null }[]) {
+    if (p.instagram_id) porId.set(p.instagram_id, { origen: "precios", pieza_id: p.id })
+    if (p.facebook_id) porId.set(p.facebook_id, { origen: "precios", pieza_id: p.id })
   }
   return (id: string, texto: string | null | undefined): Origen | null => {
     const h = huella(texto)

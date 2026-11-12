@@ -3,10 +3,12 @@ import { AlertTriangleIcon } from "lucide-react"
 
 import { DashboardShell } from "@/components/dashboard-shell"
 import { Tablero } from "@/components/kanban/tablero"
+import { TableroPrecios } from "@/components/kanban/tablero-precios"
 import { TableroRedaccion } from "@/components/kanban/tablero-redaccion"
 import { Card, CardContent } from "@/components/ui/card"
 import { getEstadoIA } from "@/lib/content-data"
 import { getTablero } from "@/lib/kanban-data"
+import { getTableroPrecios } from "@/lib/precios-data"
 import { getTableroRedaccion } from "@/lib/redaccion-data"
 
 // Cambia con cada pasada del pipeline: nada que prerenderizar.
@@ -28,6 +30,7 @@ export const metadata = {
 const PIPELINES = [
   { id: "redes", nombre: "Redes sociales" },
   { id: "redaccion", nombre: "Redacción" },
+  { id: "precios", nombre: "Precios" },
 ] as const
 
 /**
@@ -45,17 +48,22 @@ const PIPELINES = [
  * Hay dos pipelines sobre las mismas noticias: el de redes sociales (angulo y
  * piezas por red) y el de redaccion (la noticia redactada entera, con fuentes).
  * Comparten la extraccion y el analisis; se cambia de uno a otro arriba.
+ *
+ * El tercero, precios, no parte de noticias: toma los precios de Sandia y arma
+ * los carruseles de lo que mas subio y bajo, sin IA.
  */
 export default async function ContenidoPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
-  const pipeline = (await searchParams).pipeline === "redaccion" ? "redaccion" : "redes"
-  const [ia, datos, datosRedaccion] = await Promise.all([
+  const pedido = (await searchParams).pipeline
+  const pipeline = pedido === "redaccion" || pedido === "precios" ? pedido : "redes"
+  const [ia, datos, datosRedaccion, datosPrecios] = await Promise.all([
     getEstadoIA(),
     pipeline === "redes" ? getTablero() : null,
     pipeline === "redaccion" ? getTableroRedaccion() : null,
+    pipeline === "precios" ? getTableroPrecios() : null,
   ])
 
   return (
@@ -82,7 +90,7 @@ export default async function ContenidoPage({
           {PIPELINES.map((p) => (
             <Link
               key={p.id}
-              href={p.id === "redes" ? "/" : "/?pipeline=redaccion"}
+              href={p.id === "redes" ? "/" : `/?pipeline=${p.id}`}
               aria-current={pipeline === p.id ? "page" : undefined}
               className={`rounded-md px-3 py-1.5 transition-colors ${
                 pipeline === p.id ? "bg-background text-foreground font-medium shadow-sm" : "hover:text-foreground"
@@ -95,6 +103,7 @@ export default async function ContenidoPage({
 
         {datos ? <Tablero datos={datos} /> : null}
         {datosRedaccion ? <TableroRedaccion datos={datosRedaccion} /> : null}
+        {datosPrecios ? <TableroPrecios datos={datosPrecios} /> : null}
       </div>
     </DashboardShell>
   )

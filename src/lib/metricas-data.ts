@@ -13,7 +13,7 @@ import { idDeCuentaActual } from "@/lib/accounts"
 export type PostMetrica = {
   id: string
   red: "instagram" | "facebook"
-  origen: "noticia" | "estudio"
+  origen: "noticia" | "estudio" | "precios"
   texto: string | null
   enlace: string | null
   imagen: string | null

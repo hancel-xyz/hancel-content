@@ -548,7 +548,7 @@ export function Metricas({ vista }: { vista: MetricasVista }) {
                               <Punto red={p.red} />
                               {NOMBRE_RED[p.red]}
                             </Badge>
-                            <Badge variant="secondary">{p.origen === "noticia" ? "Noticia" : "Estudio"}</Badge>
+                            <Badge variant="secondary">{p.origen === "noticia" ? "Noticia" : p.origen === "precios" ? "Precios" : "Estudio"}</Badge>
                             {p.enlace ? (
                               <a href={p.enlace} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" aria-label="Abrir el post">
                                 <ExternalLinkIcon className="size-3.5" />
