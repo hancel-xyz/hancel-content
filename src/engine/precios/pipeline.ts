@@ -3,7 +3,7 @@ import { supabaseAdmin } from "../supabase-admin"
 import { comentarFacebook, publicarFacebook, publicarInstagram } from "../publish/meta"
 import { subirCarrusel, subirImagenSuelta } from "../render/storage"
 import { dibujarCarrusel } from "./laminas"
-import { traerRankings, type Direccion, type Periodo, type Ranking } from "./sandia"
+import { sandiaConfigurada, traerRankings, type Direccion, type Periodo, type Ranking } from "./sandia"
 import { comentarioFacebook, diasEntre, textoDelPost } from "./textos"
 
 /**
@@ -34,9 +34,11 @@ export type AjustesPrecios = {
   horaSubieron: string
   link: string
   redes: ("instagram" | "facebook")[]
+  /** Desde que dia local (YYYY-MM-DD) corre lo automatico; antes no arma ni publica. */
+  desde: string | null
 }
 
-const POR_DEFECTO: AjustesPrecios = { activo: false, horaBajaron: "13:00", horaSubieron: "13:10", link: "https://usesandia.com", redes: ["instagram", "facebook"] }
+const POR_DEFECTO: AjustesPrecios = { activo: false, horaBajaron: "13:00", horaSubieron: "13:10", link: "https://usesandia.com", redes: ["instagram", "facebook"], desde: null }
 const ZONA = "America/Bogota"
 /** Un carrusel que no salio a su hora no se publica despues de esto: los precios ya serian viejos. */
 const VENCE_MS = 6 * 3_600_000
@@ -44,7 +46,7 @@ const MAX_INTENTOS = 3
 
 export async function ajustesPrecios(accountId: string): Promise<AjustesPrecios> {
   const { data } = await supabaseAdmin().from("precios_ajustes").select("*").eq("account_id", accountId).maybeSingle()
-  const d = data as { activo: boolean; hora_bajaron: string; hora_subieron: string; link: string; redes: string[] } | null
+  const d = data as { activo: boolean; hora_bajaron: string; hora_subieron: string; link: string; redes: string[]; activo_desde: string | null } | null
   if (!d) return POR_DEFECTO
   return {
     activo: d.activo,
@@ -52,6 +54,7 @@ export async function ajustesPrecios(accountId: string): Promise<AjustesPrecios>
     horaSubieron: d.hora_subieron || POR_DEFECTO.horaSubieron,
     link: d.link || POR_DEFECTO.link,
     redes: (d.redes ?? []).filter((r): r is "instagram" | "facebook" => r === "instagram" || r === "facebook"),
+    desde: d.activo_desde ?? null,
   }
 }
 
@@ -222,6 +225,12 @@ export async function armarLosDeHoy(
   const referencia = rankings.subieron.referencia
   // El dia de precios no puede ser viejo: con un festivo el lunes, el ultimo es
   // el viernes (3 dias); mas que eso es que Sandia no ha cargado.
+  // Sandia carga los precios del dia entre las 11 y las 12: a la 1 ya estan.
+  // Lo automatico publica solo los de hoy; si aun no llegan, espera a la
+  // siguiente pasada en vez de sacar los de ayer.
+  if (periodo === "dia" && !opciones.forzar && referencia !== hoy) {
+    return { armados, motivos: [`Sandia aún no carga los precios de hoy (el último día es ${referencia}).`] }
+  }
   if (periodo === "dia" && diasEntre(referencia, hoy) > 4) {
     return { armados, motivos: [`El último día con precios es ${referencia}: demasiado viejo para publicarlo.`] }
   }
@@ -365,7 +374,8 @@ async function publicarElQueToca(accountId: string, now: Date): Promise<string |
 /** La pasada del tick para una cuenta: armar lo que toque y publicar lo que llego a su hora. */
 export async function pasadaPrecios(accountId: string, now: Date): Promise<Record<string, unknown>> {
   const a = await ajustesPrecios(accountId)
-  if (!a.activo) return { activo: false }
+  if (!a.activo) return { activo: false, sandia: sandiaConfigurada() }
+  if (a.desde && dayIn(ZONA, now) < a.desde) return { activo: true, sandia: sandiaConfigurada(), esperando: `Empieza el ${a.desde}.` }
   let armado: unknown
   try {
     armado = await armarLosDeHoy(accountId, now)

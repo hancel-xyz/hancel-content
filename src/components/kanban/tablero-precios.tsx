@@ -134,7 +134,9 @@ function Ajustes({ datos, pending, correr }: { datos: Datos; pending: boolean; c
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <label className="flex items-center gap-2">
           <Switch checked={datos.ajustes.activo} disabled={pending} onCheckedChange={(v) => correr(() => guardarActivoPrecios(v))} aria-label="Publicación automática de precios" />
-          <span className="font-medium">{datos.ajustes.activo ? "Publicación automática activa" : "Publicación automática pausada"}</span>
+          <span className="font-medium">
+            {datos.ajustes.activo ? (datos.ajustes.desde && datos.ajustes.desde > new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" }) ? `Automática desde el ${datos.ajustes.desde}` : "Publicación automática activa") : "Publicación automática pausada"}
+          </span>
         </label>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-muted-foreground">Bajaron a las</span>
@@ -157,7 +159,7 @@ function Ajustes({ datos, pending, correr }: { datos: Datos; pending: boolean; c
         </div>
       </div>
       <p className="text-muted-foreground text-xs">
-        Lunes a viernes: los 5 que más bajaron y los 5 que más subieron, con el último día de precios de Sandia. Sábado: los de la semana de lunes a viernes. Instagram lleva el link de {datos.ajustes.link.replace(/^https?:\/\//, "")} en la descripción; Facebook, en el primer comentario. Sin IA: solo datos.
+        Lunes a viernes: los 5 que más bajaron y los 5 que más subieron, con los precios del mismo día (Sandia los carga entre las 11 y las 12). Sábado: los de la semana de lunes a viernes. Instagram lleva el link de {datos.ajustes.link.replace(/^https?:\/\//, "")} en la descripción; Facebook, en el primer comentario. Sin IA: solo datos.
       </p>
     </div>
   )
@@ -212,11 +214,12 @@ function Detalle({ ficha, onClose, pending, correr }: { ficha: FichaPrecios | nu
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-          <div className="flex gap-3 overflow-x-auto pb-2">
+          {/* shrink-0: sin el, la fila se encogia dentro del dialogo y recortaba las laminas. */}
+          <div className="flex shrink-0 gap-3 overflow-x-auto pb-2">
             {imagenes.map((src, i) => (
               <a key={src} href={src} target="_blank" rel="noreferrer" className="shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={src} alt={`Lámina ${i + 1}`} className="h-80 w-64 rounded-md border object-cover" loading="lazy" />
+                <img src={src} alt={`Lámina ${i + 1}`} className="h-96 w-auto max-w-none rounded-md border" loading="lazy" />
               </a>
             ))}
           </div>

@@ -82,3 +82,6 @@ $$;
 
 select cron.unschedule('engine_hancel_precios_tick') where exists (select 1 from cron.job where jobname = 'engine_hancel_precios_tick');
 select cron.schedule('engine_hancel_precios_tick', '1-59/5 * * * *', 'select public.fire_precios_tick();');
+
+-- Desde que dia corre lo automatico (antes no arma ni publica).
+alter table public.precios_ajustes add column if not exists activo_desde date;
