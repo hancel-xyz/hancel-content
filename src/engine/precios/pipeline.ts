@@ -23,7 +23,7 @@ import { comentarioFacebook, diasEntre, textoDelPost, tituloCarrusel } from "./t
  *   sabado           dos semanales, de la semana de lunes a viernes que cerro.
  *   domingo          nada: las centrales no reportan.
  *
- * Se arma desde media hora antes de la primera hora y hasta las 20:00, en
+ * Se arma desde una hora antes de la primera hora (los videos tardan) y hasta las 20:00, en
  * cuanto haya datos que no se hayan publicado. Un dia de precios sale una sola
  * vez (unico por referencia) y cada dia sale como mucho un carrusel por
  * direccion, aunque Sandia cargue dos fechas el mismo dia.
@@ -218,8 +218,8 @@ export async function armarLosDeHoy(
 
   if (!periodo) return { armados, motivos: ["Domingo: no hay carruseles de precios."] }
   const primera = Math.min(minutos(a.horaBajaron), minutos(a.horaSubieron))
-  if (!opciones.forzar && (ahora < primera - 30 || ahora >= 20 * 60)) {
-    return { armados, motivos: [`Fuera de la ventana de armado (desde media hora antes de las ${a.horaBajaron} hasta las 20:00).`] }
+  if (!opciones.forzar && (ahora < primera - 60 || ahora >= 20 * 60)) {
+    return { armados, motivos: [`Fuera de la ventana de armado (desde una hora antes de las ${a.horaBajaron} hasta las 20:00).`] }
   }
 
   const supabase = supabaseAdmin()
