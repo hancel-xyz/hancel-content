@@ -181,6 +181,7 @@ function Tarjeta({ f, onAbrir }: { f: FichaPrecios; onAbrir: () => void }) {
           <Badge className={f.direccion === "subieron" ? "bg-red-600 text-white" : "bg-emerald-600 text-white"}>{f.direccion === "subieron" ? "Subieron" : "Bajaron"}</Badge>
           {f.instagramId ? <Badge variant="secondary">Instagram</Badge> : null}
           {f.facebookId ? <Badge variant="secondary">Facebook</Badge> : null}
+          <EstadoVideo f={f} />
         </div>
         <p className="text-muted-foreground text-xs">{f.etapa === "publicado" && f.publicadoAt ? `Salió ${hora(f.publicadoAt)}` : `Programado: ${hora(f.programadoPara)}`}</p>
         {f.error ? <p className="text-destructive line-clamp-3 text-xs">{f.error}</p> : null}
@@ -189,11 +190,21 @@ function Tarjeta({ f, onAbrir }: { f: FichaPrecios; onAbrir: () => void }) {
   )
 }
 
+/** Como van las laminas animadas. */
+function EstadoVideo({ f }: { f: FichaPrecios }) {
+  if (f.videoEstado === "listo") return <Badge variant="secondary">Animado</Badge>
+  if (f.videoEstado === "pendiente") return <Badge variant="outline" className="font-normal">{`Animando ${f.videos.length}/${f.totalLaminas}`}</Badge>
+  if (f.videoEstado === "error") return <Badge variant="outline" className="font-normal" title={f.videoError ?? undefined}>Fijo</Badge>
+  return null
+}
+
 function Detalle({ ficha, onClose, pending, correr }: { ficha: FichaPrecios | null; onClose: () => void; pending: boolean; correr: (a: () => Promise<Resultado>) => void }) {
   const [red, setRed] = React.useState<"instagram" | "facebook">("instagram")
   if (!ficha) return null
   const imagenes = red === "instagram" ? ficha.imagenes : ficha.imagenesFacebook.length ? ficha.imagenesFacebook : ficha.imagenes
   const texto = red === "instagram" ? ficha.textoInstagram : ficha.textoFacebook
+  // Con los videos listos se ve lo que va a salir: en Instagram un video por lamina; en Facebook, uno solo.
+  const videos = ficha.videoEstado !== "listo" ? [] : red === "instagram" ? ficha.videos : ficha.videoFacebook ? [ficha.videoFacebook] : []
   const editable = ficha.etapa !== "publicado" && ficha.etapa !== "publicando"
   return (
     <Dialog open={!!ficha} onOpenChange={(v) => (!v ? onClose() : null)}>
@@ -216,13 +227,19 @@ function Detalle({ ficha, onClose, pending, correr }: { ficha: FichaPrecios | nu
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
           {/* shrink-0: sin el, la fila se encogia dentro del dialogo y recortaba las laminas. */}
           <div className="flex shrink-0 gap-3 overflow-x-auto pb-2">
-            {imagenes.map((src, i) => (
-              <a key={src} href={src} target="_blank" rel="noreferrer" className="shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={src} alt={`Lámina ${i + 1}`} className="h-96 w-auto max-w-none rounded-md border" loading="lazy" />
-              </a>
-            ))}
+            {videos.length
+              ? videos.map((src) => <video key={src} src={src} className="h-96 w-auto max-w-none shrink-0 rounded-md border" autoPlay muted loop playsInline controls />)
+              : imagenes.map((src, i) => (
+                  <a key={src} href={src} target="_blank" rel="noreferrer" className="shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt={`Lámina ${i + 1}`} className="h-96 w-auto max-w-none rounded-md border" loading="lazy" />
+                  </a>
+                ))}
           </div>
+          {ficha.videoEstado === "pendiente" ? (
+            <p className="text-muted-foreground text-xs">{`Armando las láminas animadas: ${ficha.videos.length} de ${ficha.totalLaminas}. Si a la hora no están, sale con las láminas fijas.`}</p>
+          ) : null}
+          {ficha.videoEstado === "error" && ficha.videoError ? <p className="text-muted-foreground text-xs">{`Sale con láminas fijas: ${ficha.videoError}`}</p> : null}
           <pre className="bg-muted/50 rounded-md p-3 text-xs leading-relaxed whitespace-pre-wrap">{texto}</pre>
           {ficha.error ? <p className="text-destructive text-sm">{ficha.error}</p> : null}
         </div>

@@ -85,3 +85,12 @@ select cron.schedule('engine_hancel_precios_tick', '1-59/5 * * * *', 'select pub
 
 -- Desde que dia corre lo automatico (antes no arma ni publica).
 alter table public.precios_ajustes add column if not exists activo_desde date;
+
+-- Laminas animadas: un MP4 por lamina para el carrusel de Instagram y uno solo,
+-- con todas seguidas, para Facebook. Se arman por partes en varias pasadas
+-- (cada lamina tarda); si a la hora no estan, sale la version fija.
+alter table public.precios_carruseles add column if not exists videos text[] not null default '{}';
+alter table public.precios_carruseles add column if not exists video_facebook text;
+alter table public.precios_carruseles add column if not exists video_estado text check (video_estado in ('pendiente', 'listo', 'error'));
+alter table public.precios_carruseles add column if not exists video_error text;
+alter table public.precios_ajustes add column if not exists animado boolean not null default true;

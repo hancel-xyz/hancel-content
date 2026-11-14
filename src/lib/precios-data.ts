@@ -22,6 +22,12 @@ export type FichaPrecios = {
   etapa: EtapaPrecios
   imagenes: string[]
   imagenesFacebook: string[]
+  /** Las laminas animadas: un MP4 por lamina (Instagram) y uno con todas (Facebook). */
+  videos: string[]
+  videoFacebook: string | null
+  videoEstado: "pendiente" | "listo" | "error" | null
+  videoError: string | null
+  totalLaminas: number
   textoInstagram: string | null
   textoFacebook: string | null
   programadoPara: string
@@ -65,6 +71,11 @@ export async function getTableroPrecios(): Promise<TableroPrecios> {
       etapa,
       imagenes: (f.imagenes as string[]) ?? [],
       imagenesFacebook: (f.imagenes_facebook as string[]) ?? [],
+      videos: (f.videos as string[] | null) ?? [],
+      videoFacebook: (f.video_facebook as string | null) ?? null,
+      videoEstado: (f.video_estado as FichaPrecios["videoEstado"]) ?? null,
+      videoError: (f.video_error as string | null) ?? null,
+      totalLaminas: (datos.productos?.length ?? 0) + 2,
       textoInstagram: (f.texto_instagram as string | null) ?? null,
       textoFacebook: (f.texto_facebook as string | null) ?? null,
       programadoPara: String(f.programado_para),

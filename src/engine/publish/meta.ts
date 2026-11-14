@@ -158,7 +158,7 @@ async function aJpeg(urls: string[]): Promise<{ ok: true; urls: string[] } | { o
 
 export async function publicarInstagram(
   accountId: string,
-  opciones: { texto: string; imagenes?: string[]; video?: string }
+  opciones: { texto: string; imagenes?: string[]; video?: string; videosCarrusel?: string[] }
 ): Promise<ResultadoPublicacion> {
   const cuenta = await cuentaInstagram(accountId)
   if (!cuenta.ok) return cuenta
@@ -168,7 +168,13 @@ export async function publicarInstagram(
   if (existente) return { ok: true, postId: existente }
 
   let contenedor: string | null = null
-  if (opciones.video) {
+  const videosCarrusel = (opciones.videosCarrusel ?? []).filter(Boolean).slice(0, 10)
+  if (videosCarrusel.length >= 2) {
+    // Un carrusel de videos (las laminas animadas de precios); el orden de la lista es el de las laminas.
+    const c = await ejecutar(accountId, "instagram", "INSTAGRAM_CREATE_CAROUSEL_CONTAINER", { ig_user_id: ig, child_video_urls: videosCarrusel, caption }, 200_000)
+    if (!c.ok) return c
+    contenedor = idDe(c.data)
+  } else if (opciones.video) {
     const c = await ejecutar(accountId, "instagram", "INSTAGRAM_POST_IG_USER_MEDIA", {
       ig_user_id: ig,
       media_type: "REELS",
@@ -196,7 +202,7 @@ export async function publicarInstagram(
   const p = await ejecutar(accountId, "instagram", "INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH", {
     ig_user_id: ig,
     creation_id: contenedor,
-    max_wait_seconds: opciones.video ? 240 : 90,
+    max_wait_seconds: opciones.video ? 240 : videosCarrusel.length >= 2 ? 120 : 90,
   }, 280_000)
   if (!p.ok) return p
   return { ok: true, postId: idDe(p.data) ?? contenedor }

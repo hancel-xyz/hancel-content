@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { cuentaPorSlug, todasLasCuentas } from "@/engine/accounts"
-import { armarLosDeHoy, pasadaPrecios, publicarCarruselPrecios, rehacerCarrusel } from "@/engine/precios/pipeline"
+import { armarLosDeHoy, avanzarVideos, pasadaPrecios, publicarCarruselPrecios, rehacerCarrusel } from "@/engine/precios/pipeline"
 import { authorizeEngineRequest } from "@/lib/api-auth"
 
 export const dynamic = "force-dynamic"
@@ -36,9 +36,11 @@ async function handle(request: Request) {
         armar === "dia" || armar === "semana"
           ? await armarLosDeHoy(cuenta.id, now, { forzar: true, periodo: armar })
           : publicar
-            ? await publicarCarruselPrecios(cuenta.id, publicar)
+            ? await publicarCarruselPrecios(cuenta.id, publicar, now.getTime() + 270_000)
             : (await rehacerCarrusel(cuenta.id, rehacer!, now), { ok: true })
-      return NextResponse.json({ at: now.toISOString(), cuenta: cuenta.slug, resultado })
+      // Lo recien armado sigue con sus videos en el tiempo que queda.
+      const videos = publicar ? null : await avanzarVideos(cuenta.id, now.getTime() + 250_000).catch((e) => String(e))
+      return NextResponse.json({ at: now.toISOString(), cuenta: cuenta.slug, resultado, videos })
     } catch (error) {
       return NextResponse.json({ at: now.toISOString(), error: error instanceof Error ? error.message : String(error) }, { status: 500 })
     }
