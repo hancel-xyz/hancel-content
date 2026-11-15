@@ -754,6 +754,9 @@ async function generarCarruselAlterno(
   const plantilla = estilo.plantilla === "impacto" || estilo.plantilla === "periodico" ? estilo.plantilla : "editorial"
   const { caption, hashtags, fotos, elemento } = guion
   const slides = guion.slides.slice(0, MAX_SLIDES - 1)
+  // Impacto va en 4: portada, dos laminas con foto y el cierre. La conclusion
+  // (la lamina solo de texto antes del cierre) se queda fuera.
+  if (plantilla === "impacto" && slides.length > 3) slides.length = 3
 
   const terminos = fotos.length > 0 ? fotos : terminosDeBusqueda(news, nichos, estilo.fotosLiterales)
   const banco = new BancoDeFotos(terminos)
@@ -785,7 +788,10 @@ async function generarCarruselAlterno(
   const nicho = (guion.etiqueta || news?.tema || news?.niche || "").trim()
   const total = slides.length + 1
   const titularDe = (s: Slide) => (s.type === "photo_hook" ? (s.hook ?? "") : (s.title ?? ""))
-  const reparto = repartirNoticia(Math.max(0, slides.length - 1), estilo.usarFotos && pexelsConfigurado())
+  const conFotos = estilo.usarFotos && pexelsConfigurado()
+  const interiores = Math.max(0, slides.length - 1)
+  // En impacto todas las interiores llevan foto: ya no hay conclusion de solo texto.
+  const reparto = plantilla === "impacto" ? Array.from({ length: interiores }, () => (conFotos ? ("foto" as const) : ("texto" as const))) : repartirNoticia(interiores, conFotos)
   // La fecha de la noticia, para el pie del estilo periodico ("28 de octubre de 2026").
   const fecha = new Date(news?.created_at ?? Date.now()).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Bogota" })
   const comun = { plantilla, nicho, fecha, total, logoClaro, logoOscuro, estilo, insertoForma, insertoAjuste, insertoPos } as const
@@ -819,6 +825,8 @@ async function generarCarruselAlterno(
   if (hecho && imagenes[0]) imagenes[0] = await estamparCredito(imagenes[0], hecho.medio, estilo)
   // En el periodico la foto de una lamina interior termina en y=706: el credito va justo debajo.
   if (hecho && imagenes[1] && plantilla === "periodico" && reparto[0] === "foto") imagenes[1] = await estamparCredito(imagenes[1], hecho.medio, estilo, 710)
+  // En impacto la foto llega al borde: el credito va en vertical, como en la portada.
+  if (hecho && imagenes[1] && plantilla === "impacto" && reparto[0] === "foto") imagenes[1] = await estamparCredito(imagenes[1], hecho.medio, estilo)
   const images = await subirCarrusel(pieceKey, imagenes)
   let portadaFacebook: string | undefined
   if (conPortadaFacebook && slides[0]) {

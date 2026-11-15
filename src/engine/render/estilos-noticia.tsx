@@ -253,7 +253,7 @@ function Sello({ logo, lado }: { logo: string | null; acento?: string; lado: num
   const ancho = lado * 2.3
   return (
     <div style={{ display: "flex", width: ancho, height: lado, alignItems: "center", justifyContent: "center" }}>
-      <Img src={logo} style={{ width: ancho, height: lado * 0.8, objectFit: "contain" }} />
+      <Img src={logo} style={{ width: ancho, height: lado * 1.1, objectFit: "contain" }} />
     </div>
   )
 }
@@ -304,11 +304,10 @@ function Impacto(l: LaminaNoticia) {
             backgroundImage: "linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 22%, rgba(0,0,0,0) 38%, rgba(0,0,0,0.82) 62%, rgba(0,0,0,0.97) 100%)",
           }}
         />
-        {l.inserto ? (
-          <div style={{ display: "flex", position: "absolute", top: 72, left: 64, width: 330, height: 330, borderRadius: 330, border: `8px solid ${IM.texto}`, background: "#FFFFFF" }}>
-            <Img src={l.inserto} style={{ width: 314, height: 314, borderRadius: 314 }} />
-          </div>
-        ) : null}
+        {/* El elemento clave como en el periodico (circulo o cuadrado, lleno, aro
+            de acento), en la parte de arriba de la foto: abajo va el titular. A la
+            derecha baja un poco para no tapar la paginacion. */}
+        <InsertoFoto l={l} acento={acento} sitios={[{ top: 64, left: 64 }, { top: 124, right: 64 }]} />
         {paginaArriba}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginTop: "auto", padding: "0 70px 84px" }}>
           <Sello logo={logo} acento={acento} lado={100} />
@@ -402,13 +401,15 @@ function Cabecera({ logo, acento, alto = 96 }: { logo: string | null; acento: st
  */
 const BORDE_INSERTO = 8
 
-function InsertoFoto({ l, acento, arriba, altoFoto }: { l: LaminaNoticia; acento: string; arriba: number; altoFoto: number }) {
+type Sitio = { top: number; left?: number; right?: number }
+
+function InsertoFoto({ l, acento, arriba = 0, altoFoto = 0, sitios: propios }: { l: LaminaNoticia; acento: string; arriba?: number; altoFoto?: number; sitios?: Sitio[] }) {
   if (!l.inserto) return null
   const lado = 330
   const forma = l.insertoForma ?? "circulo"
   const redondeo = forma === "circulo" ? lado : 48
   const margen = 48
-  const sitios = [
+  const sitios: Sitio[] = propios ?? [
     { top: arriba + margen, left: margen },
     { top: arriba + margen, right: margen },
     { top: arriba + altoFoto - lado - margen, right: margen },
