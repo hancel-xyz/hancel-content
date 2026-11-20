@@ -158,6 +158,12 @@ export type GenerationConfig = {
    * que en redes; lo que cambia es a partir de que nota se redactan.
    */
   redaccion_score_threshold: number | null
+  /**
+   * Cuentas con portal: el puntaje de redes (1 a 10, ver `puntaje-redes.ts`)
+   * que una nota necesita para salir en carrusel. El portal publica todas; esto
+   * solo filtra redes. NULL = salen todas.
+   */
+  redes_puntaje_minimo: number | null
   generation_mode: "auto" | "manual"
   /**
    * Para que redes genera el modo automatico.

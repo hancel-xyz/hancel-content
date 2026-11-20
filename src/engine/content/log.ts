@@ -23,6 +23,7 @@ export type ContentEventKind =
   | "content.piece.created"
   | "content.linkedin.failed"
   | "content.instagram.queued"
+  | "content.instagram.skipped"
   | "content.carousel.created"
   | "content.instagram.failed"
   | "content.piece.published"

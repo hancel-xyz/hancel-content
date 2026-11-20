@@ -30,12 +30,14 @@ export function SeleccionDeNoticias({
   const [umbral, setUmbral] = React.useState(inicial)
   const inicialRedaccion = config.redaccion_score_threshold === null ? "" : String(config.redaccion_score_threshold)
   const [umbralRedaccion, setUmbralRedaccion] = React.useState(inicialRedaccion)
+  const inicialRedes = config.redes_puntaje_minimo === null ? "" : String(config.redes_puntaje_minimo)
+  const [minimoRedes, setMinimoRedes] = React.useState(inicialRedes)
   const [pending, startTransition] = React.useTransition()
   const [result, setResult] = React.useState<ActionResult | null>(null)
 
   const afectadas = distribution.find((d) => String(d.score) === umbral.trim())?.count ?? null
   const afectadasRedaccion = distribution.find((d) => String(d.score) === umbralRedaccion.trim())?.count ?? null
-  const dirty = umbral.trim() !== inicial || umbralRedaccion.trim() !== inicialRedaccion
+  const dirty = umbral.trim() !== inicial || umbralRedaccion.trim() !== inicialRedaccion || minimoRedes.trim() !== inicialRedes
 
   const save = () => {
     const form = new FormData()
@@ -44,6 +46,7 @@ export function SeleccionDeNoticias({
     for (const [clave, valor] of Object.entries(config.variables)) form.set(clave, valor)
     form.set("score_threshold", umbral.trim())
     form.set("redaccion_score_threshold", umbralRedaccion.trim())
+    form.set("redes_puntaje_minimo", minimoRedes.trim())
 
     setResult(null)
     startTransition(async () => setResult(await updateGenerationConfig(form)))
@@ -121,6 +124,35 @@ export function SeleccionDeNoticias({
               </>
             ) : (
               <>De 0 a 10, la misma escala del análisis.</>
+            )}
+          </p>
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="redes_puntaje_minimo">Puntaje mínimo para redes (carruseles de las notas del portal)</Label>
+          <Input
+            id="redes_puntaje_minimo"
+            type="number"
+            min={1}
+            max={10}
+            inputMode="numeric"
+            placeholder="sin mínimo"
+            className="w-32 font-mono"
+            value={minimoRedes}
+            onChange={(event) => {
+              setResult(null)
+              setMinimoRedes(event.target.value)
+            }}
+          />
+          <p className="text-muted-foreground text-xs">
+            {minimoRedes.trim() === "" ? (
+              <>Sin mínimo: toda nota publicada en el portal sale también en carrusel.</>
+            ) : (
+              <>
+                El portal publica todas las notas; a Instagram y Facebook solo salen las que tengan un puntaje de redes de{" "}
+                <strong>{minimoRedes.trim()}</strong> o más (de 1 a 10: cuánto alcance e interacción se espera del carrusel).
+                Súbelo para publicar menos y mejores.
+              </>
             )}
           </p>
         </div>

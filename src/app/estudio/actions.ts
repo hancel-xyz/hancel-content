@@ -842,6 +842,17 @@ export async function updateGenerationConfig(form: FormData): Promise<ActionResu
       }
     }
 
+    // El puntaje minimo de redes (cuentas con portal) tambien viaja solo desde la
+    // tarjeta de seleccion.
+    if (form.has("redes_puntaje_minimo")) {
+      const t = text(form, "redes_puntaje_minimo")
+      const nuevo = t.length > 0 ? Number(t) : null
+      if (nuevo !== null && (!Number.isInteger(nuevo) || nuevo < 1 || nuevo > 10)) {
+        return { ok: false, error: "El puntaje mínimo para redes tiene que ser un entero entre 1 y 10." }
+      }
+      extraRedaccion.redes_puntaje_minimo = nuevo
+    }
+
     const { error } = await supabaseAdmin()
       .from("generation_config")
       .update({

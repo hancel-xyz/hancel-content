@@ -3,6 +3,7 @@ import type { RawNews } from "@/lib/types"
 import { supabaseAdmin } from "../supabase-admin"
 import { conexionWeb } from "../web/webhook"
 import { enqueueInstagramJob } from "./jobs"
+import { puntuarParaRedes } from "./puntaje-redes"
 import type { ContentAngle, NotaDelPortal, Variables } from "./types"
 
 /**
@@ -49,23 +50,40 @@ export function textoDeLaNota(payload: Payload, fuentes: Fuente[] | null): strin
   return partes.join("\n\n").slice(0, MAX_TEXTO)
 }
 
+/** Notas que se califican por pasada: cada una es una llamada a Claude. */
+const MAX_PUNTUAR_POR_PASADA = 8
+
 /**
  * Encola el carrusel de cada nota ya publicada en el portal que aun no lo
- * tiene. Devuelve cuantos encolo.
+ * tiene, si su puntaje de redes llega al minimo de la cuenta (ver
+ * `puntaje-redes.ts`). Las que no llegan se quedan solo en el portal.
+ * Devuelve cuantas encolo y cuantas dejo fuera de redes en esta pasada.
  */
-export async function encolarCarruselesDelPortal(accountId: string, variables: Variables): Promise<number> {
+export async function encolarCarruselesDelPortal(
+  accountId: string,
+  variables: Variables,
+  minimo: number | null
+): Promise<{ encoladas: number; fuera: number }> {
   const supabase = supabaseAdmin()
   const { data } = await supabase
     .from("news_redacciones")
-    .select("raw_news_id, titular, payload, fuentes, web_url")
+    .select("id, raw_news_id, titular, payload, fuentes, web_url, puntaje_redes")
     .eq("account_id", accountId)
     .eq("status", "redactada")
     .not("web_url", "is", null)
     .gte("redactada_at", new Date(Date.now() - VENTANA_MS).toISOString())
     .order("redactada_at", { ascending: true })
     .limit(40)
-  const notas = (data ?? []) as { raw_news_id: string; titular: string | null; payload: Payload; fuentes: Fuente[] | null; web_url: string }[]
-  if (notas.length === 0) return 0
+  const notas = (data ?? []) as {
+    id: string
+    raw_news_id: string
+    titular: string | null
+    payload: Payload
+    fuentes: Fuente[] | null
+    web_url: string
+    puntaje_redes: number | null
+  }[]
+  if (notas.length === 0) return { encoladas: 0, fuera: 0 }
 
   // Las que ya tienen angulo ya entraron (o salieron) del pipeline de redes.
   const { data: conAngulo } = await supabase
@@ -75,10 +93,42 @@ export async function encolarCarruselesDelPortal(accountId: string, variables: V
   const yaEntraron = new Set(((conAngulo ?? []) as { raw_news_id: string }[]).map((a) => a.raw_news_id))
 
   let encoladas = 0
+  let fuera = 0
+  let puntuadas = 0
   for (const nota of notas.filter((n) => !yaEntraron.has(n.raw_news_id))) {
     const { data: news } = await supabase.from("raw_news").select("*").eq("id", nota.raw_news_id).maybeSingle()
     if (!news) continue
     const titular = nota.titular ?? nota.payload.titular ?? (news as RawNews).title
+
+    // El puntaje de redes se calcula una vez y se guarda en la nota, haya o no
+    // minimo: sirve para recalibrar el criterio con las metricas reales.
+    let puntaje = nota.puntaje_redes
+    if (puntaje === null) {
+      if (puntuadas >= MAX_PUNTUAR_POR_PASADA) continue
+      puntuadas++
+      try {
+        const p = await puntuarParaRedes(accountId, {
+          titular,
+          resumen: nota.payload.resumen ?? null,
+          tema: (news as RawNews).tema ?? (news as RawNews).niche ?? null,
+          texto: textoDeLaNota(nota.payload, nota.fuentes),
+        })
+        puntaje = p.puntaje
+        await supabase
+          .from("news_redacciones")
+          .update({ puntaje_redes: p.puntaje, puntaje_redes_razon: p.razon, puntaje_redes_at: new Date().toISOString() })
+          .eq("id", nota.id)
+      } catch (error) {
+        // Sin minimo, un fallo del puntaje no frena el carrusel. Con minimo, se
+        // reintenta en la siguiente pasada: publicar sin saber es saltarse el filtro.
+        console.error(`[portal] puntaje de redes de ${nota.raw_news_id}:`, error instanceof Error ? error.message : error)
+        if (minimo !== null) continue
+      }
+    }
+    if (minimo !== null && puntaje !== null && puntaje < minimo) {
+      fuera++
+      continue
+    }
 
     const { data: angulo, error } = await supabase
       .from("content_angles")
@@ -101,7 +151,7 @@ export async function encolarCarruselesDelPortal(accountId: string, variables: V
     })
     encoladas++
   }
-  return encoladas
+  return { encoladas, fuera }
 }
 
 /** El link de la nota del portal de una noticia, si ya esta publicada. */

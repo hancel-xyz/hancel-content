@@ -277,8 +277,10 @@ export async function runContentTick(
     if (!conPortal.has(cuenta.id)) continue
     try {
       if (!(await ajustesDe(cuenta.id, "instagram")).enabled) continue
-      const n = await encolarCarruselesDelPortal(cuenta.id, (await configDe(cuenta.id)).variables)
+      const cfg = await configDe(cuenta.id)
+      const { encoladas: n, fuera } = await encolarCarruselesDelPortal(cuenta.id, cfg.variables, cfg.redes_puntaje_minimo)
       if (n > 0) log.emit("content.instagram.queued", `${n} carrusel(es) encolado(s) desde el portal`, { accountId: cuenta.id })
+      if (fuera > 0) log.emit("content.instagram.skipped", `${fuera} nota(s) solo en el portal: no llegaron al puntaje de redes (${cfg.redes_puntaje_minimo})`, { accountId: cuenta.id })
     } catch (error) {
       errors.push(`[${cuenta.slug}] portal: ${error instanceof Error ? error.message : String(error)}`)
     }
