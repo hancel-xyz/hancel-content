@@ -75,6 +75,25 @@ export function rangoSemana(r: Ranking): string {
   return a.m === b.m ? `${a.d} al ${b.d} de ${MESES[b.m - 1]}` : `${a.d} de ${MESES[a.m - 1]} al ${b.d} de ${MESES[b.m - 1]}`
 }
 
+/**
+ * Como se nombra una central. `titulo` va en la portada (corto, en mayusculas
+ * alli); `texto` en los posts, con el articulo si lo lleva.
+ */
+const NOMBRES: Record<string, { titulo: string; texto: string }> = {
+  corabastos: { titulo: "Corabastos", texto: "Corabastos" },
+  cma: { titulo: "La Mayorista", texto: "la Central Mayorista de Antioquia" },
+  cavasa: { titulo: "Cavasa", texto: "Cavasa" },
+  centroabastos: { titulo: "Centroabastos", texto: "Centroabastos" },
+}
+
+export function nombreCentral(c: NonNullable<Ranking["central"]>): { titulo: string; texto: string; conCiudad: string } {
+  const n = NOMBRES[c.slug] ?? { titulo: c.nombre, texto: c.nombre }
+  return { ...n, conCiudad: `${n.texto} (${c.ciudad})` }
+}
+
+/** "en Corabastos (Bogotá)" o, sin central, "en las centrales de abastos de Colombia". */
+export const dondeTexto = (r: Ranking) => (r.central ? `en ${nombreCentral(r.central).conCiudad}` : "en las centrales de abastos de Colombia")
+
 const verbo = (d: Direccion) => (d === "subieron" ? "subieron" : "bajaron")
 
 const HASHTAGS = "#preciosagricolas #agrocolombia #centralesdeabastos #preciosmayoristas #campocolombiano"
@@ -88,15 +107,16 @@ export function textoDelPost(r: Ranking, red: "instagram" | "facebook", link: st
   const dominio = link.replace(/^https?:\/\//, "").replace(/\/$/, "")
   const encabezado =
     r.periodo === "dia"
-      ? `${icono} ${capital(fechaLarga(r.referencia))}: estos son los 5 productos que más ${verbo(r.direccion)} de precio ${cuando(r.referencia, hoy)} en las centrales de abastos de Colombia.`
-      : `${icono} Resumen de la semana del ${rangoSemana(r)}: los 5 productos que más ${verbo(r.direccion)} de precio en las centrales de abastos de Colombia.`
+      ? `${icono} Los que más ${verbo(r.direccion)} ${cuando(r.referencia, hoy)} ${dondeTexto(r)}. ${capital(fechaLarga(r.referencia))}: estos son los ${r.productos.length} productos que más ${verbo(r.direccion)} de precio.`
+      : `${icono} Los que más ${verbo(r.direccion)} esta semana ${dondeTexto(r)}. Resumen de la semana del ${rangoSemana(r)}: los ${r.productos.length} productos que más ${verbo(r.direccion)} de precio.`
 
   const lista = r.productos
-    .map((m, i) => `${i + 1}. ${m.nombre}: ${porcentaje(m.porcentaje)} en ${lugar(m).replace(/ · (.+)$/, " ($1)")}. Pasó de ${pesos(m.antes)} a ${pesos(m.ahora)} el kilo.`)
+    // Con una sola central no se repite el lugar en cada producto.
+    .map((m, i) => `${i + 1}. ${m.nombre}: ${porcentaje(m.porcentaje)}${r.central ? "" : ` en ${lugar(m).replace(/ · (.+)$/, " ($1)")}`}. Pasó de ${pesos(m.antes)} a ${pesos(m.ahora)} el kilo.`)
     .join("\n")
 
   const t = r.totales
-  const balance = `En total, de ${t.evaluados} precios ${r.periodo === "dia" ? "reportados" : "de la semana"}, ${t.subieron} subieron, ${t.bajaron} bajaron y ${t.estables} se mantuvieron.`
+  const balance = `En total${r.central ? ` en ${nombreCentral(r.central).texto}` : ""}, de ${t.evaluados} precios ${r.periodo === "dia" ? "reportados" : "de la semana"}, ${t.subieron} subieron, ${t.bajaron} bajaron y ${t.estables} se mantuvieron.`
 
   const cierre =
     red === "instagram"
@@ -112,8 +132,8 @@ export function comentarioFacebook(link: string): string {
 }
 
 /** El titulo corto del carrusel, para el tablero. */
-export function tituloCarrusel(r: Pick<Ranking, "periodo" | "direccion" | "referencia" | "lunes" | "viernes">): string {
-  const que = r.direccion === "subieron" ? "Los 5 que más subieron" : "Los 5 que más bajaron"
+export function tituloCarrusel(r: Pick<Ranking, "periodo" | "direccion" | "referencia" | "lunes" | "viernes" | "central">): string {
+  const que = `Los que más ${r.direccion}${r.central ? ` en ${nombreCentral(r.central).titulo}` : ""}`
   return r.periodo === "dia" ? `${que} · ${fechaLarga(r.referencia)}` : `${que} · semana del ${rangoSemana(r as Ranking)}`
 }
 

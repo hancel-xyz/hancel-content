@@ -9,6 +9,8 @@
  * producto sale varias veces (la zanahoria en Pasto y en Neiva). De cada
  * producto se queda su movimiento mas fuerte.
  *
+ * Con `central` (slug: corabastos, cma, cavasa...) el ranking es solo de esa central.
+ *
  * La clave va en `SANDIA_API_KEY` (plan interno, sin limite diario).
  */
 
@@ -45,6 +47,8 @@ export type Ranking = {
   viernes?: string
   totales: { subieron: number; bajaron: number; estables: number; evaluados: number }
   productos: Movimiento[]
+  /** Si el ranking es de una sola central: su slug, nombre y ciudad. Sin ella, todas las centrales. */
+  central?: { slug: string; nombre: string; ciudad: string }
 }
 
 type FilaApi = {
@@ -137,9 +141,10 @@ function cincoDistintos(filas: FilaApi[], periodo: Periodo): Movimiento[] {
  */
 export async function traerRankings(
   periodo: Periodo,
-  opciones: { fecha?: string; semana?: string } = {}
+  opciones: { fecha?: string; semana?: string; central?: string } = {}
 ): Promise<Record<Direccion, Ranking>> {
   const params: Record<string, string> = { periodo, limite: "80" }
+  if (opciones.central) params.central = opciones.central
   if (periodo === "dia" && opciones.fecha) params.fecha = opciones.fecha
   if (periodo === "semana") params.semana = opciones.semana ?? "cerrada"
   const datos = (await pedir("/precios/movimientos", params)) as Partial<Record<Periodo, BloqueApi>>
@@ -149,6 +154,10 @@ export async function traerRankings(
   const referencia = periodo === "dia" ? bloque.fecha : bloque.lunes
   if (!referencia) throw new Error("Sandia no devolvió la fecha de los precios.")
   const totales = { ...bloque.totales, evaluados: bloque.total_evaluados }
+  // El nombre de la central sale de sus filas (la API no lo da aparte).
+  const fila = opciones.central ? [...(bloque.subieron ?? []), ...(bloque.bajaron ?? [])][0] : undefined
+  if (opciones.central && !fila) throw new Error(`Sandia no trajo precios de ${opciones.central}.`)
+  const central = fila ? { slug: opciones.central!, nombre: fila.central_nombre, ciudad: fila.ciudad_nombre } : undefined
   const armar = (direccion: Direccion): Ranking => ({
     periodo,
     direccion,
@@ -156,6 +165,7 @@ export async function traerRankings(
     ...(periodo === "semana" ? { lunes: bloque.lunes, viernes: bloque.viernes } : {}),
     totales,
     productos: cincoDistintos(bloque[direccion] ?? [], periodo),
+    ...(central ? { central } : {}),
   })
   return { subieron: armar("subieron"), bajaron: armar("bajaron") }
 }

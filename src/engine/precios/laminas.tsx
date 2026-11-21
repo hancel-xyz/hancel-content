@@ -3,7 +3,7 @@ import { ImageResponse } from "next/og"
 import { cargarFuente } from "../render/fonts"
 import { ALTO, ANCHO } from "../render/theme"
 import type { Direccion, Movimiento, Ranking } from "./sandia"
-import { cuando, etiquetaDia, fechaLarga, lugar, pesos, porcentaje, rangoSemana } from "./textos"
+import { cuando, etiquetaDia, fechaLarga, lugar, nombreCentral, pesos, porcentaje, rangoSemana } from "./textos"
 import { animarLamina, type Animacion, type CapaPng } from "./video"
 
 /**
@@ -109,10 +109,17 @@ function Portada({ d }: { d: DatosLaminas }) {
   const r = d.ranking
   const dir = r.direccion
   const palabra = dir === "subieron" ? "SUBIERON" : "BAJARON"
-  const tercera = r.periodo === "dia" ? cuando(r.referencia, d.hoy).toUpperCase() : "EN LA SEMANA"
-  const kicker = r.periodo === "dia" ? `${fechaLarga(r.referencia)} · Centrales de abastos` : `Semana del ${rangoSemana(r)}`
+  const central = r.central ? nombreCentral(r.central) : null
+  // Con central: "HOY EN CORABASTOS" / "ESTA SEMANA EN CAVASA", achicada hasta que quepa en una linea.
+  const tercera = central
+    ? `${r.periodo === "dia" ? cuando(r.referencia, d.hoy) : "esta semana"} en ${central.titulo}`.toUpperCase()
+    : r.periodo === "dia" ? cuando(r.referencia, d.hoy).toUpperCase() : "EN LA SEMANA"
+  const tamTercera = Math.min(118, Math.floor((ANCHO - 128) / (tercera.length * 0.5)))
+  const kicker = r.periodo === "dia"
+    ? `${fechaLarga(r.referencia)} · ${r.central ? r.central.ciudad : "Centrales de abastos"}`
+    : `Semana del ${rangoSemana(r)}${r.central ? ` · ${r.central.ciudad}` : ""}`
   // Neutro: lo leen sobre todo productores, no compradores.
-  const fomo = "Así cambiaron los precios en las centrales"
+  const fomo = central ? `Así cambiaron los precios en ${central.texto}` : "Así cambiaron los precios en las centrales"
   const [p1, p2, p3, p4, p5] = r.productos
   const c = d.capa
 
@@ -141,7 +148,7 @@ function Portada({ d }: { d: DatosLaminas }) {
       <div style={{ display: "flex", padding: "38px 64px 0", fontFamily: HERO, fontWeight: 600, fontSize: 34, ...en(c, "kicker") }}>{capital(kicker)}</div>
 
       <div style={{ display: "flex", flexDirection: "column", padding: "6px 64px 0" }}>
-        <div style={{ display: "flex", fontSize: 118, fontWeight: 700, lineHeight: 1.05, letterSpacing: -1, ...en(c, "linea1") }}>LOS 5 QUE MÁS</div>
+        <div style={{ display: "flex", fontSize: 118, fontWeight: 700, lineHeight: 1.05, letterSpacing: -1, ...en(c, "linea1") }}>{`LOS ${r.productos.length} QUE MÁS`}</div>
         <div
           style={{
             display: "flex",
@@ -161,7 +168,7 @@ function Portada({ d }: { d: DatosLaminas }) {
             <Flecha dir={dir} lado={128} color={TEMAS[dir].fuerte} />
           </div>
         </div>
-        <div style={{ display: "flex", fontSize: 118, fontWeight: 700, lineHeight: 1.05, marginTop: 14, letterSpacing: -1, ...en(c, "linea3") }}>{tercera}</div>
+        <div style={{ display: "flex", alignItems: "center", height: 124, fontSize: tamTercera, fontWeight: 700, lineHeight: 1.05, marginTop: 14, letterSpacing: -1, ...en(c, "linea3") }}>{tercera}</div>
       </div>
 
       <div style={{ display: "flex", position: "absolute", left: 0, top: 672, width: ANCHO, height: 540 }}>
