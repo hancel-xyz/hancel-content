@@ -40,6 +40,8 @@ export type ResumenRedaccion = {
   sinMaterial: number
   /** Apartadas por viejas antes de escribirlas. */
   viejas: number
+  /** Escritas, pero repetian un hecho ya publicado: no salen. */
+  repetidas?: number
   /** Lo enviado al portal de noticias en esta pasada. */
   web?: ResumenWeb
   fallidas: number
@@ -79,7 +81,7 @@ export async function seleccionarParaRedaccion(accountId: string, disparo: "auto
 
   const { data: candidatas } = await supabase
     .from("raw_news")
-    .select("id, title, relevance_score, created_at, duplicate_of_news_id")
+    .select("id, title, snippet, analysis_notes, relevance_score, created_at, duplicate_of_news_id")
     .eq("account_id", accountId)
     .eq("status", "analyzed")
     .gte("relevance_score", c.redaccion_score_threshold)
@@ -88,7 +90,12 @@ export async function seleccionarParaRedaccion(accountId: string, disparo: "auto
     .order("relevance_score", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(60)
-  const lista = (candidatas ?? []) as (Noticia & { duplicate_of_news_id: string | null })[]
+  const lista = (candidatas ?? []) as (Noticia & { duplicate_of_news_id: string | null; snippet: string | null; analysis_notes: string | null })[]
+  // Lo que dice la noticia mas alla del titular: la entradilla si el buscador la
+  // trajo (a menudo viene vacia) o las notas del analisis, que leyo el articulo y
+  // nombran la cifra. Sin el "Score 8:" del principio, que no dice nada del hecho.
+  const detalleDe = (n: { snippet: string | null; analysis_notes: string | null }) =>
+    n.snippet?.trim() || (n.analysis_notes ?? "").replace(/^\s*score\s*\d+\s*:\s*/i, "").trim() || null
   if (lista.length === 0) return { seleccionadas: 0, errores: [] }
 
   const { data: ya } = await supabase.from("news_redacciones").select("raw_news_id").in("raw_news_id", lista.map((n) => n.id))
@@ -101,12 +108,22 @@ export async function seleccionarParaRedaccion(accountId: string, disparo: "auto
   const desde = new Date(Date.now() - DIAS_DE_HECHOS_CUBIERTOS * 86_400_000).toISOString()
   const { data: cubiertas } = await supabase
     .from("news_redacciones")
-    .select("raw_news_id, raw_news!inner(title)")
+    .select("raw_news_id, titular, raw_news!inner(title)")
     .eq("account_id", accountId)
     .neq("status", "descartada")
     .gte("created_at", desde)
-    .limit(120)
-  const yaCubiertas = ((cubiertas ?? []) as unknown as { raw_news_id: string; raw_news: { title: string } }[]).map((x) => ({ id: x.raw_news_id, title: x.raw_news.title }))
+    // Las mas recientes primero: sin orden, el tope podia dejar fuera justo las de ayer.
+    .order("created_at", { ascending: false })
+    .limit(150)
+  // Lo ya redactado se compara por el titular de la nota, que es concreto y
+  // trae la cifra; si aun no esta redactada, por el de la noticia original. Sin
+  // resumen: una frase de paso ("el agro lo freno") hacia que el modelo diera por
+  // cubierta una noticia con un dato nuevo. El resumen solo va en las candidatas,
+  // para entender los titulares vagos.
+  const yaCubiertas = ((cubiertas ?? []) as unknown as { raw_news_id: string; titular: string | null; raw_news: { title: string } }[]).map((x) => ({
+    id: x.raw_news_id,
+    title: x.titular ?? x.raw_news.title,
+  }))
 
   const errores: string[] = []
   let elegidas = aspirantes.map((a) => a.id)
@@ -114,7 +131,7 @@ export async function seleccionarParaRedaccion(accountId: string, disparo: "auto
   try {
     const v = await elegirPorHecho(
       accountId,
-      aspirantes.map((n) => ({ id: n.id, title: n.title, score: n.relevance_score, created_at: n.created_at })),
+      aspirantes.map((n) => ({ id: n.id, title: n.title, detalle: detalleDe(n), score: n.relevance_score, created_at: n.created_at })),
       yaCubiertas,
       (await modelosClaude(accountId)).angulo
     )
@@ -155,13 +172,49 @@ export async function pedirRedaccion(accountId: string, newsId: string): Promise
     .eq("id", fila.id)
 }
 
+/**
+ * Si la nota recien escrita cuenta un hecho que ya se publico en la ultima
+ * semana, el id de la noticia duena de ese hecho; si no, null. Compara titular
+ * contra titular de notas propias, que siempre son concretos. Ante un fallo de
+ * la comparacion no bloquea: mejor una repetida que perder una nota.
+ */
+async function yaPublicado(accountId: string, filaId: string, newsId: string, titular: string, resumen: string | null): Promise<string | null> {
+  if (!titular) return null
+  const desde = new Date(Date.now() - DIAS_DE_HECHOS_CUBIERTOS * 86_400_000).toISOString()
+  const { data } = await supabaseAdmin()
+    .from("news_redacciones")
+    .select("raw_news_id, titular")
+    .eq("account_id", accountId)
+    .eq("status", "redactada")
+    .neq("id", filaId)
+    .not("titular", "is", null)
+    .gte("redactada_at", desde)
+    .order("redactada_at", { ascending: false })
+    .limit(150)
+  const cubiertas = ((data ?? []) as { raw_news_id: string; titular: string }[]).map((x) => ({ id: x.raw_news_id, title: x.titular }))
+  if (cubiertas.length === 0) return null
+  try {
+    const v = await elegirPorHecho(
+      accountId,
+      // Score 0 a proposito: frente a lo ya publicado, la nueva nunca gana el hecho.
+      [{ id: newsId, title: titular, detalle: resumen, score: 0, created_at: new Date().toISOString() }],
+      cubiertas,
+      (await modelosClaude(accountId)).angulo
+    )
+    return v.repetidas.get(newsId) ?? null
+  } catch (e) {
+    console.error("[redaccion] revision de repetidas tras redactar:", e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
 /** Redacta una noticia: investiga, busca la imagen y llama al agente. */
 async function redactarUna(
   accountId: string,
   filaId: string,
   newsId: string,
   intentos: number
-): Promise<"redactada" | "material_insuficiente" | "vieja" | "error"> {
+): Promise<"redactada" | "material_insuficiente" | "vieja" | "descartada" | "error"> {
   const supabase = supabaseAdmin()
   // Una noticia vieja no se redacta nunca, la haya pedido quien la haya pedido.
   const apartarPorVieja = async (motivo: string) => {
@@ -211,6 +264,28 @@ async function redactarUna(
     const estado = redaccion.status === "ok" ? "redactada" : "material_insuficiente"
     const { data: previaData } = await supabase.from("news_redacciones").select("version, web_version").eq("id", filaId).maybeSingle()
     const previa = previaData as { version: number; web_version: number } | null
+
+    // Segunda revision de repetidas, ya con la nota escrita. La de la seleccion
+    // solo ve el titular del medio, y uno vago ("El agro enfrenta su mayor
+    // retroceso en dos decadas") pasa por un hecho nuevo. El titular y el
+    // resumen propios siempre traen la cifra: si el hecho ya se publico, la nota
+    // no sale al portal ni a redes.
+    if (estado === "redactada" && !(previa && previa.web_version > 0)) {
+      const duena = await yaPublicado(accountId, filaId, newsId, redaccion.titular, redaccion.resumen)
+      if (duena) {
+        await supabase
+          .from("news_redacciones")
+          .update({
+            status: "descartada",
+            titular: redaccion.titular || null,
+            payload: redaccion,
+            error: `Repite el hecho de otra noticia ya redactada (${duena.slice(0, 8)}), visto al redactarla.`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", filaId)
+        return "descartada" as const
+      }
+    }
     // El nicho (el tema en el portal): por lo que cuenta la noticia, siempre
     // uno de los de la cuenta.
     const nicho =
@@ -312,6 +387,7 @@ export async function tickRedaccion(
         if (r === "redactada") resumen.redactadas++
         else if (r === "material_insuficiente") resumen.sinMaterial++
         else if (r === "vieja") resumen.viejas++
+        else if (r === "descartada") resumen.repetidas = (resumen.repetidas ?? 0) + 1
         else resumen.fallidas++
       })
     )

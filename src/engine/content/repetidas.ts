@@ -30,10 +30,22 @@ export type Aspirante = {
   score: number | null
   /** Desempata cuando el score es el mismo: gana la que llego primero. */
   created_at: string
+  /**
+   * El resumen o entradilla, si lo hay. Sin el, un titular vago ("El agro
+   * enfrenta su mayor retroceso en dos decadas") no se reconoce como el mismo
+   * hecho que "El PIB agropecuario cayo 6,7 %": la cifra esta en el resumen.
+   */
+  detalle?: string | null
 }
 
 /** Una noticia que ya genero contenido y por tanto ya ocupa su hecho. */
-export type YaCubierta = { id: string; title: string }
+export type YaCubierta = { id: string; title: string; detalle?: string | null }
+
+/** Titular y, si lo hay, un trozo del resumen: lo justo para reconocer el hecho. */
+const linea = (title: string, detalle?: string | null) => {
+  const d = (detalle ?? "").replace(/\s+/g, " ").trim().slice(0, 220)
+  return d ? `${title} — ${d}` : title
+}
 
 export type Veredicto = {
   /** Las que siguen: una por hecho. */
@@ -46,6 +58,12 @@ export type Veredicto = {
 const SYSTEM = `Agrupas titulares de prensa por el hecho del que informan.
 
 Dos titulares son EL MISMO HECHO cuando informan del mismo suceso concreto, aunque los redacten distinto, los firme otro medio o cambien el enfoque. Ejemplo de mismo hecho: "El Niño golpea al cafe: Fedecafe sube a $12.000 el kilo de pasilla" y "Federacion de Cafeteros ajusta precios de la pasilla para blindar ingresos frente a El Niño".
+
+Cada candidato trae el titular y, a veces, tras una raya (—), notas sobre su contenido. Si el titular es vago, decide por esas notas: las cifras dicen de que hecho se trata. Es EL MISMO HECHO cuando la noticia principal es el mismo dato sobre el mismo sujeto, aunque el titular no lo nombre: "Las exportaciones de flores crecieron 12 %" y "Año record para los floricultores" (cuyas notas hablan de exportaciones de flores que crecieron 12 %) son el mismo hecho.
+
+Pero un mismo informe trae varios hechos: si el dato principal o el sujeto cambian, son hechos DISTINTOS. "La inflacion de octubre fue 5 %" y "Los alimentos subieron 9 % en octubre" salen del mismo informe y son hechos distintos (uno es la inflacion total, el otro la de alimentos). Dos noticias sobre el mismo fenomeno (una sequia, una plaga) con datos distintos tambien son distintas.
+
+La regla de las cifras: si el candidato trae una cifra o un dato nuevo que el cubierto no tenia (otro porcentaje, otro monto, otra fecha, otro lugar), es un hecho DISTINTO aunque sea del mismo tema. Si trae la MISMA cifra principal contada de otra forma, es el MISMO hecho.
 
 NO son el mismo hecho dos noticias que solo comparten tema, sector o protagonista. Dos noticias sobre el cafe colombiano son hechos distintos si una habla del precio de la pasilla y otra de etiquetar el origen en los empaques. Ante la duda, son hechos DISTINTOS: descartar una noticia buena cuesta mas que publicar dos parecidas.
 
@@ -99,14 +117,14 @@ export async function elegirPorHecho(
   }
 
   const cubiertos = yaCubiertas
-    .map((c, i) => `${registrar(c.id, "p", i + 1)}: ${c.title}`)
+    .map((c, i) => `${registrar(c.id, "p", i + 1)}: ${linea(c.title, c.detalle)}`)
     .join("\n")
 
   // Por score y, a igual score, por antiguedad: asi el primero de la lista es
   // siempre el que debe ganar el hecho, y el modelo apunta hacia atras.
   const ordenados = [...aspirantes].sort(ordenPorMerito)
   const candidatos = ordenados
-    .map((a, i) => `${registrar(a.id, "c", i + 1)}: ${a.title}`)
+    .map((a, i) => `${registrar(a.id, "c", i + 1)}: ${linea(a.title, a.detalle)}`)
     .join("\n")
 
   const prompt = `CUBIERTOS
@@ -115,22 +133,32 @@ ${cubiertos || "(ninguno)"}
 CANDIDATOS
 ${candidatos}`
 
-  const r = await llamarClaude({ accountId, model, system: SYSTEM, prompt, maxTokens: 1000 })
-  if (!r.ok) throw new Error(`No se pudo comparar los hechos: ${r.error}`)
-
-  const bruto = parsearJSONDeClaude(r.texto) as Bruto
-  const pares = Array.isArray(bruto.repetidos) ? (bruto.repetidos as Par[]) : []
-
-  for (const par of pares) {
-    if (typeof par.id !== "string" || typeof par.mismo_hecho_que !== "string") continue
-    const repetida = porEtiqueta.get(par.id)
-    const duena = porEtiqueta.get(par.mismo_hecho_que)
-    // Una etiqueta inventada, o una noticia marcada como repeticion de si
-    // misma, se ignora: mejor un duplicado de mas que perder una noticia por
-    // una respuesta mal formada.
-    if (!repetida || !duena || repetida === duena) continue
-    repetidas.set(repetida, duena)
+  // Dos lecturas y solo cuenta lo que las dos ven. En los casos dudosos el
+  // modelo cambia de opinion de una llamada a otra (el mismo dia, una vez no
+  // descartaba nada y otra descartaba cuatro); un repetido de verdad sale en las dos.
+  const lecturas = await Promise.all([0, 1].map(() => llamarClaude({ accountId, model, system: SYSTEM, prompt, maxTokens: 1000 })))
+  const uso = { entrada: 0, salida: 0 }
+  const vistas: Map<string, string>[] = []
+  for (const r of lecturas) {
+    if (!r.ok) throw new Error(`No se pudo comparar los hechos: ${r.error}`)
+    uso.entrada += r.uso.entrada
+    uso.salida += r.uso.salida
+    const bruto = parsearJSONDeClaude(r.texto) as Bruto
+    const pares = Array.isArray(bruto.repetidos) ? (bruto.repetidos as Par[]) : []
+    const esta = new Map<string, string>()
+    for (const par of pares) {
+      if (typeof par.id !== "string" || typeof par.mismo_hecho_que !== "string") continue
+      const repetida = porEtiqueta.get(par.id)
+      const duena = porEtiqueta.get(par.mismo_hecho_que)
+      // Una etiqueta inventada, o una noticia marcada como repeticion de si
+      // misma, se ignora: mejor un duplicado de mas que perder una noticia por
+      // una respuesta mal formada.
+      if (!repetida || !duena || repetida === duena) continue
+      esta.set(repetida, duena)
+    }
+    vistas.push(esta)
   }
+  for (const [repetida, duena] of vistas[0]) if (vistas[1].has(repetida)) repetidas.set(repetida, duena)
 
   // Cadenas: si c3 repite a c2 y c2 repite a p1, c3 pertenece a p1. Sin esto la
   // repetida podria apuntar a otra repetida y el tablero enseñaria un enlace que
@@ -148,7 +176,7 @@ ${candidatos}`
   return {
     elegidas: ordenados.filter((a) => !repetidas.has(a.id)),
     repetidas,
-    uso: r.uso,
+    uso,
   }
 }
 
