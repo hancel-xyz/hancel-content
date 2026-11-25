@@ -208,7 +208,7 @@ export async function analizarPendientes(
           // Composio sale a la web; el modelo no. Si no trae nada se analiza con
           // el snippet: una noticia sin material no es un fallo, es una noticia
           // con menos contexto, y el propio agente la marca 'failed'.
-          const busqueda = await investigarEnLaWeb(`${noticia.title} ${noticia.tema}`.trim())
+          const busqueda = await investigarEnLaWeb(`${noticia.title} ${noticia.tema}`.trim(), accountId)
           const material = busqueda?.texto ?? null
 
           const prompt = `NOTICIA A CONSOLIDAR Y CALIFICAR

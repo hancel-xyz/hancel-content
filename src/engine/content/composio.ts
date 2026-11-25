@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "../supabase-admin"
+import { buscarWebSerper } from "../serper"
 
 /**
  * La busqueda web del motor, via Composio.
@@ -45,7 +46,15 @@ export type CitaWeb = {
  * Antes solo se guardaba el texto y las fuentes se perdian; la redaccion las
  * necesita para atribuir cada dato.
  */
-export async function investigarEnLaWeb(consulta: string): Promise<{ texto: string; citas: CitaWeb[] } | null> {
+export async function investigarEnLaWeb(consulta: string, accountId?: string): Promise<{ texto: string; citas: CitaWeb[] } | null> {
+  // Composio retiro su buscador (COMPOSIO_SEARCH responde 410 "retired" desde
+  // el 19-20 nov. 2026): sin material, el analisis bajaba los puntajes y la
+  // redaccion se quedaba sin fuentes. Ahora va primero Google via Serper, con
+  // la clave de la cuenta; Composio queda solo de respaldo.
+  if (accountId) {
+    const web = await investigarConSerper(accountId, consulta)
+    if (web) return web
+  }
   const clave = await claveComposio()
   if (!clave) return null
 
@@ -79,6 +88,27 @@ export async function investigarEnLaWeb(consulta: string): Promise<{ texto: stri
   } catch {
     return null
   }
+}
+
+/**
+ * Los resultados de Google como el mismo `{ texto, citas }` que daba Composio:
+ * cada resultado es una linea "titulo: extracto" y cada frase lleva su marca
+ * [n], para que `extractoDe` sepa que dice cada fuente.
+ */
+async function investigarConSerper(accountId: string, consulta: string): Promise<{ texto: string; citas: CitaWeb[] } | null> {
+  const resultados = await buscarWebSerper(accountId, consulta)
+  if (resultados.length === 0) return null
+  const texto = resultados
+    .map((r, i) => {
+      const linea = `${r.titulo}${r.medio ? ` (${r.medio})` : ""}${r.fecha ? `, ${r.fecha}` : ""}${r.extracto ? `: ${r.extracto}` : "."}`
+      return linea
+        .split(/(?<=[.!?])\s+/)
+        .map((frase) => `${frase.replace(/[.!?]?$/, "")} [${i + 1}].`)
+        .join(" ")
+    })
+    .join("\n")
+  const citas = resultados.map((r) => ({ url: r.url, titulo: r.titulo, autor: null, fecha: r.fecha, imagen: r.imagen }))
+  return { texto, citas }
 }
 
 /**

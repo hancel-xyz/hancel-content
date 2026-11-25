@@ -75,6 +75,46 @@ export async function searchNews(
   throw new Error(`Serper sigue con 429 para "${spec.q}" tras 3 intentos.`)
 }
 
+// ------------------------------------------------------------------ web
+
+const SERPER_SEARCH_URL = "https://google.serper.dev/search"
+
+export type ResultadoWeb = { titulo: string; url: string; extracto: string; fecha: string | null; medio: string | null; imagen: string | null }
+
+/**
+ * Busqueda web de Google (resultados organicos y, si vienen, las noticias del
+ * bloque "Top stories"). Es el material de investigacion de cada noticia desde
+ * que Composio retiro su buscador (nov. 2026). `[]` si falla: el analisis
+ * sigue con el titular y el snippet.
+ */
+export async function buscarWebSerper(accountId: string, consulta: string, signal?: AbortSignal): Promise<ResultadoWeb[]> {
+  try {
+    const response = await fetch(SERPER_SEARCH_URL, {
+      method: "POST",
+      headers: { "X-API-KEY": await apiKey(accountId), "Content-Type": "application/json" },
+      body: JSON.stringify({ q: consulta.slice(0, 250), num: 10, gl: "co", hl: "es" }),
+      signal: signal ?? AbortSignal.timeout(20_000),
+    })
+    if (!response.ok) return []
+    const datos = (await response.json().catch(() => null)) as {
+      organic?: { title?: string; link?: string; snippet?: string; date?: string }[]
+      topStories?: { title?: string; link?: string; source?: string; date?: string; imageUrl?: string }[]
+    } | null
+    const vistos = new Set<string>()
+    const salida: ResultadoWeb[] = []
+    const meter = (r: ResultadoWeb) => {
+      if (!/^https?:\/\//.test(r.url) || vistos.has(r.url) || !r.titulo) return
+      vistos.add(r.url)
+      salida.push(r)
+    }
+    for (const o of datos?.organic ?? []) meter({ titulo: o.title?.trim() ?? "", url: o.link?.trim() ?? "", extracto: o.snippet?.trim() ?? "", fecha: o.date?.trim() || null, medio: null, imagen: null })
+    for (const t of datos?.topStories ?? []) meter({ titulo: t.title?.trim() ?? "", url: t.link?.trim() ?? "", extracto: "", fecha: t.date?.trim() || null, medio: t.source?.trim() || null, imagen: t.imageUrl?.trim() || null })
+    return salida.slice(0, 10)
+  } catch {
+    return []
+  }
+}
+
 // ------------------------------------------------------------------ imagenes
 
 const SERPER_IMAGES_URL = "https://google.serper.dev/images"
