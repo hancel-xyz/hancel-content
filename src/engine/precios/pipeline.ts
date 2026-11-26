@@ -2,81 +2,80 @@ import { dayIn, partsIn } from "../schedule"
 import { supabaseAdmin } from "../supabase-admin"
 import { comentarFacebook, publicarFacebook, publicarInstagram } from "../publish/meta"
 import { subirCarrusel, subirImagenSuelta } from "../render/storage"
-import { animarUna, dibujarCarrusel, totalLaminas, type DatosLaminas } from "./laminas"
-import { unirVideos } from "./video"
-import { sandiaConfigurada, traerRankings, type Direccion, type Periodo, type Ranking } from "./sandia"
-import { comentarioFacebook, diasEntre, textoDelPost, tituloCarrusel } from "./textos"
+import { dibujarCarrusel, type DatosLaminas } from "./laminas"
+import { sandiaConfigurada, traerLista, type ListaPrecios, type Periodo } from "./sandia"
+import { comentarioFacebook, diasEntre, dominioDe, textoDelPost } from "./textos"
 
 /**
- * El pipeline de precios: datos de Sandia -> carrusel -> publicacion.
+ * El pipeline de precios: datos -> carrusel -> publicacion.
  *
  * Sin IA. Cada etapa es un proceso aparte:
  *
- *   1. Datos     la API de Sandia da el ranking de lo que mas subio y bajo.
- *   2. Carrusel  se dibujan las laminas, se suben a R2 y se escriben los
- *                textos de Instagram y Facebook. Queda "listo", con su hora.
- *   3. Publicar  a su hora sale en Instagram (link en la descripcion) y en
- *                Facebook (link en el primer comentario).
+ *   1. Datos     la API de precios da todos los productos de la central, con
+ *                su precio por kilo y cuanto subio o bajo.
+ *   2. Carrusel  se dibujan las laminas (portada con los cuatro que mas
+ *                subieron, la lista completa y el cierre), se suben a R2 y se
+ *                escribe el texto. Queda "listo", con su hora.
+ *   3. Publicar  a su hora sale en Instagram (link al portal en la
+ *                descripcion) y en Facebook (link en el primer comentario).
  *
- * Por central: cada central de los ajustes (Corabastos, CMA...) tiene sus dos
- * carruseles, con su ranking solo de esa central. Sin centrales, uno general.
+ * Un carrusel por central (Corabastos, CMA...) y por dia. En la tabla la
+ * columna `direccion` queda en "todos": viene de cuando habia uno de los que
+ * subieron y otro de los que bajaron.
  *
  * Calendario (hora de la cuenta, Bogota):
- *   lunes a viernes  por central, los que bajaron (13:00) y los que subieron
- *                    (13:10); cada central siguiente, 20 minutos despues.
- *   sabado           dos semanales, de la semana de lunes a viernes que cerro.
+ *   lunes a viernes  la primera central a su hora (13:00) y cada central
+ *                    siguiente, 20 minutos despues.
+ *   sabado           el semanal de cada central, de la semana que cerro.
  *   domingo          nada: las centrales no reportan.
  *
- * Se arma desde una hora antes de la primera hora (los videos tardan) y hasta las 20:00, en
+ * Se arma desde una hora antes de la primera hora y hasta las 20:00, en
  * cuanto haya datos que no se hayan publicado. Un dia de precios sale una sola
- * vez (unico por referencia) y cada dia sale como mucho un carrusel por
- * direccion, aunque Sandia cargue dos fechas el mismo dia.
+ * vez por central (unico por referencia).
  */
 
 export type AjustesPrecios = {
   activo: boolean
-  horaBajaron: string
-  horaSubieron: string
+  /** La hora de la primera central; las demas salen cada 20 minutos (columna `hora_bajaron`). */
+  hora: string
+  /** El portal de precios: la ultima lamina invita a visitarlo. */
   link: string
   redes: ("instagram" | "facebook")[]
   /** Desde que dia local (YYYY-MM-DD) corre lo automatico; antes no arma ni publica. */
   desde: string | null
-  /** Si las laminas salen animadas (videos) o fijas. */
-  animado: boolean
-  /** Slugs de Sandia de las centrales que salen, en orden. Vacio = un ranking general. */
+  /** Slugs de las centrales que salen, en orden. */
   centrales: string[]
 }
 
-const POR_DEFECTO: AjustesPrecios = { activo: false, horaBajaron: "13:00", horaSubieron: "13:10", link: "https://usesandia.com", redes: ["instagram", "facebook"], desde: null, animado: false, centrales: [] }
+const POR_DEFECTO: AjustesPrecios = { activo: false, hora: "13:00", link: "https://usesandia.com", redes: ["instagram", "facebook"], desde: null, centrales: ["corabastos"] }
 const ZONA = "America/Bogota"
+/** En la tabla, de cuando habia un carrusel de los que subieron y otro de los que bajaron. */
+const DIRECCION = "todos"
 /** Un carrusel que no salio a su hora no se publica despues de esto: los precios ya serian viejos. */
 const VENCE_MS = 6 * 3_600_000
 const MAX_INTENTOS = 3
 
 export async function ajustesPrecios(accountId: string): Promise<AjustesPrecios> {
   const { data } = await supabaseAdmin().from("precios_ajustes").select("*").eq("account_id", accountId).maybeSingle()
-  const d = data as { activo: boolean; hora_bajaron: string; hora_subieron: string; link: string; redes: string[]; activo_desde: string | null; animado: boolean | null; centrales: string[] | null } | null
+  const d = data as { activo: boolean; hora_bajaron: string; link: string | null; redes: string[]; activo_desde: string | null; centrales: string[] | null } | null
   if (!d) return POR_DEFECTO
+  const centrales = (d.centrales ?? []).filter(Boolean)
   return {
     activo: d.activo,
-    horaBajaron: d.hora_bajaron || POR_DEFECTO.horaBajaron,
-    horaSubieron: d.hora_subieron || POR_DEFECTO.horaSubieron,
+    hora: d.hora_bajaron || POR_DEFECTO.hora,
     link: d.link || POR_DEFECTO.link,
     redes: (d.redes ?? []).filter((r): r is "instagram" | "facebook" => r === "instagram" || r === "facebook"),
     desde: d.activo_desde ?? null,
-    animado: d.animado ?? false,
-    centrales: (d.centrales ?? []).filter(Boolean),
+    centrales: centrales.length ? centrales : POR_DEFECTO.centrales,
   }
 }
 
 export async function guardarAjustesPrecios(accountId: string, a: Partial<AjustesPrecios>): Promise<void> {
   const fila: Record<string, unknown> = { account_id: accountId, updated_at: new Date().toISOString() }
   if (a.activo !== undefined) fila.activo = a.activo
-  if (a.horaBajaron) fila.hora_bajaron = a.horaBajaron
-  if (a.horaSubieron) fila.hora_subieron = a.horaSubieron
+  if (a.hora) fila.hora_bajaron = a.hora
   if (a.link) fila.link = a.link
   if (a.redes) fila.redes = a.redes
-  if (a.animado !== undefined) fila.animado = a.animado
   if (a.centrales) fila.centrales = a.centrales
   const { error } = await supabaseAdmin().from("precios_ajustes").upsert(fila, { onConflict: "account_id" })
   if (error) throw new Error(`No se pudieron guardar los ajustes de precios: ${error.message}`)
@@ -122,18 +121,18 @@ async function reducida(url: string | null, lado: number): Promise<string | null
   }
 }
 
-async function logoClaro(accountId: string): Promise<string | null> {
+/** El logo para fondo claro (el oscuro); si la cuenta solo tiene uno, ese. */
+async function logoOscuro(accountId: string): Promise<string | null> {
   const { data } = await supabaseAdmin().from("generation_config").select("carousel").eq("account_id", accountId).maybeSingle()
-  const logos = ((data as { carousel?: { logos?: { claro?: string | null } } } | null)?.carousel?.logos) ?? {}
-  return reducida(logos.claro ?? null, 640)
+  const logos = ((data as { carousel?: { logos?: { claro?: string | null; oscuro?: string | null } } } | null)?.carousel?.logos) ?? {}
+  return reducida(logos.oscuro ?? logos.claro ?? null, 640)
 }
 
-/** Lo que necesitan las laminas: el ranking, el logo y la foto de cada producto. */
-async function datosLaminas(accountId: string, ranking: Ranking, hoy: string, a: AjustesPrecios): Promise<DatosLaminas> {
-  const [logo, ...fotos] = await Promise.all([logoClaro(accountId), ...ranking.productos.map((m) => reducida(m.imagen, 520))])
-  const imagenes = Object.fromEntries(ranking.productos.map((m, i) => [m.producto, fotos[i]]))
-  const dominio = a.link.replace(/^https?:\/\//, "").replace(/\/$/, "")
-  return { ranking, hoy, logo, imagenes, dominio }
+/** Lo que necesitan las laminas: la lista, el logo y la foto de cada producto. */
+async function datosLaminas(accountId: string, lista: ListaPrecios, link: string): Promise<DatosLaminas> {
+  const [logo, ...fotos] = await Promise.all([logoOscuro(accountId), ...lista.productos.map((p) => reducida(p.imagen, 300))])
+  const imagenes = Object.fromEntries(lista.productos.map((p, i) => [p.producto, fotos[i]]))
+  return { lista, logo, imagenes, dominio: dominioDe(link) }
 }
 
 /** Minutos entre una central y la siguiente. */
@@ -146,13 +145,11 @@ const sumarMinutos = (hhmm: string, n: number) => {
 }
 
 /** La carpeta de un carrusel en R2. */
-const claveDe = (accountId: string, f: { periodo: string; referencia: string; direccion: string; central?: string | null }) =>
-  `precios/${accountId}/${f.periodo}-${f.referencia}-${f.direccion}${f.central ? `-${f.central}` : ""}`
+const claveDe = (accountId: string, f: { periodo: string; referencia: string; central: string }) => `precios/${accountId}/${f.periodo}-${f.referencia}-${f.central}`
 
 export type CarruselPrecios = {
   id: string
   periodo: Periodo
-  direccion: Direccion
   referencia: string
   etapa: string
   imagenes: string[]
@@ -161,17 +158,11 @@ export type CarruselPrecios = {
 
 /**
  * Dibuja, sube y deja listo un carrusel. Si ya existia (mismo dia o semana y
- * direccion), lo rehace en su sitio con los datos de ahora y conserva su hora,
+ * central), lo rehace en su sitio con los datos de ahora y conserva su hora,
  * salvo que ya este publicado.
  */
-export async function armarCarrusel(
-  accountId: string,
-  ranking: Ranking,
-  programadoPara: Date,
-  hoy: string,
-  ajustes?: AjustesPrecios
-): Promise<CarruselPrecios> {
-  if (ranking.productos.length < 3) throw new Error(`Sandia trajo solo ${ranking.productos.length} productos que ${ranking.direccion}.`)
+export async function armarCarrusel(accountId: string, lista: ListaPrecios, programadoPara: Date, ajustes?: AjustesPrecios): Promise<CarruselPrecios> {
+  if (lista.productos.length < 4) throw new Error(`Solo hay ${lista.productos.length} precios de ${lista.central.nombre}.`)
   const a = ajustes ?? (await ajustesPrecios(accountId))
   const supabase = supabaseAdmin()
 
@@ -179,35 +170,33 @@ export async function armarCarrusel(
     .from("precios_carruseles")
     .select("id, etapa")
     .eq("account_id", accountId)
-    .eq("periodo", ranking.periodo)
-    .eq("direccion", ranking.direccion)
-    .eq("referencia", ranking.referencia)
-    .eq("central", ranking.central?.slug ?? "")
+    .eq("periodo", lista.periodo)
+    .eq("direccion", DIRECCION)
+    .eq("referencia", lista.referencia)
+    .eq("central", lista.central.slug)
     .maybeSingle()
   if ((previa as { etapa: string } | null)?.etapa === "publicado") throw new Error("Ese carrusel ya se publicó.")
 
-  const dibujo = await dibujarCarrusel(await datosLaminas(accountId, ranking, hoy, a))
-
-  const clave = claveDe(accountId, { ...ranking, central: ranking.central?.slug })
+  const dibujo = await dibujarCarrusel(await datosLaminas(accountId, lista, a.link))
+  const clave = claveDe(accountId, { ...lista, central: lista.central.slug })
   const urls = await subirCarrusel(clave, [...dibujo.comunes, dibujo.cierreInstagram])
   const cierreFb = await subirImagenSuelta(clave, "cierre-facebook", dibujo.cierreFacebook)
 
   const fila = {
     account_id: accountId,
-    periodo: ranking.periodo,
-    direccion: ranking.direccion,
-    referencia: ranking.referencia,
-    central: ranking.central?.slug ?? "",
+    periodo: lista.periodo,
+    direccion: DIRECCION,
+    referencia: lista.referencia,
+    central: lista.central.slug,
     etapa: "listo",
-    datos: ranking,
+    datos: lista,
     imagenes: urls,
     imagenes_facebook: [...urls.slice(0, -1), cierreFb],
-    texto_instagram: textoDelPost(ranking, "instagram", a.link, hoy),
-    texto_facebook: textoDelPost(ranking, "facebook", a.link, hoy),
-    // Los videos se arman despues, por partes (ver avanzarVideos).
+    texto_instagram: textoDelPost(lista, "instagram", a.link),
+    texto_facebook: textoDelPost(lista, "facebook", a.link),
     videos: [],
     video_facebook: null,
-    video_estado: a.animado ? "pendiente" : null,
+    video_estado: null,
     video_error: null,
     error: null,
     intentos: 0,
@@ -216,7 +205,7 @@ export async function armarCarrusel(
   const consulta = previa
     ? supabase.from("precios_carruseles").update(fila).eq("id", (previa as { id: string }).id)
     : supabase.from("precios_carruseles").insert({ ...fila, programado_para: programadoPara.toISOString() })
-  const { data, error } = await consulta.select("id, periodo, direccion, referencia, etapa, imagenes, programado_para").single()
+  const { data, error } = await consulta.select("id, periodo, referencia, etapa, imagenes, programado_para").single()
   if (error) throw new Error(`No se pudo guardar el carrusel: ${error.message}`)
   return data as CarruselPrecios
 }
@@ -240,196 +229,95 @@ export async function armarLosDeHoy(
   const armados: string[] = []
 
   if (!periodo) return { armados, motivos: ["Domingo: no hay carruseles de precios."] }
-  const primera = Math.min(minutos(a.horaBajaron), minutos(a.horaSubieron))
-  if (!opciones.forzar && (ahora < primera - 60 || ahora >= 20 * 60)) {
-    return { armados, motivos: [`Fuera de la ventana de armado (desde una hora antes de las ${a.horaBajaron} hasta las 20:00).`] }
+  if (!opciones.forzar && (ahora < minutos(a.hora) - 60 || ahora >= 20 * 60)) {
+    return { armados, motivos: [`Fuera de la ventana de armado (desde una hora antes de las ${a.hora} hasta las 20:00).`] }
   }
 
   const supabase = supabaseAdmin()
-  // Lo que ya se armo hoy: un carrusel por central, direccion y dia, como mucho.
+  // Lo que ya se armo hoy: un carrusel por central y dia, como mucho.
   const inicioHoy = instanteLocal(hoy, "00:00").toISOString()
   const { data: deHoy } = await supabase
     .from("precios_carruseles")
-    .select("direccion, central")
+    .select("central")
     .eq("account_id", accountId)
     .eq("periodo", periodo)
+    .eq("direccion", DIRECCION)
     .gte("programado_para", inicioHoy)
-  const clave = (central: string, direccion: string) => `${central}|${direccion}`
-  const yaHoy = new Set(((deHoy ?? []) as { direccion: string; central: string }[]).map((f) => clave(f.central, f.direccion)))
-  const centrales = a.centrales.length ? a.centrales : [""]
-  if (centrales.every((c) => yaHoy.has(clave(c, "bajaron")) && yaHoy.has(clave(c, "subieron")))) return { armados, motivos: ["Los de hoy ya están armados."] }
+  const yaHoy = new Set(((deHoy ?? []) as { central: string }[]).map((f) => f.central))
+  if (a.centrales.every((c) => yaHoy.has(c))) return { armados, motivos: ["Los de hoy ya están armados."] }
 
-  for (const [n, central] of centrales.entries()) {
-    const nombre = central || "general"
-    if (yaHoy.has(clave(central, "bajaron")) && yaHoy.has(clave(central, "subieron"))) continue
-    let rankings: Record<Direccion, Ranking>
+  for (const [n, central] of a.centrales.entries()) {
+    if (yaHoy.has(central)) continue
+    let lista: ListaPrecios
     try {
       // El sabado, "auto" es la semana que acaba de cerrar; un armado a mano entre
       // semana pide la ultima cerrada, no la que va a medias.
-      rankings = await traerRankings(periodo, {
-        ...(periodo === "semana" ? { semana: diaSemana === 6 || diaSemana === 0 ? "auto" : "cerrada" } : {}),
-        ...(central ? { central } : {}),
-      })
+      lista = await traerLista(periodo, central, periodo === "semana" ? { semana: diaSemana === 6 || diaSemana === 0 ? "auto" : "cerrada" } : {})
     } catch (e) {
-      motivos.push(`${nombre}: ${e instanceof Error ? e.message : String(e)}`)
+      motivos.push(`${central}: ${e instanceof Error ? e.message : String(e)}`)
       continue
     }
-    const referencia = rankings.subieron.referencia
-    // El dia de precios no puede ser viejo: con un festivo el lunes, el ultimo es
-    // el viernes (3 dias); mas que eso es que la central no ha reportado.
-    // Sandia carga los precios del dia entre las 11 y las 12: a la 1 ya estan.
-    // Lo automatico publica solo los de hoy; si aun no llegan, espera a la
+    const referencia = lista.referencia
+    // Los precios del dia llegan entre las 11 y las 12: a la 1 ya estan. Lo
+    // automatico publica solo los de hoy; si aun no llegan, espera a la
     // siguiente pasada en vez de sacar los de ayer.
     if (periodo === "dia" && !opciones.forzar && referencia !== hoy) {
-      motivos.push(`${nombre}: aún no hay precios de hoy (el último día es ${referencia}).`)
+      motivos.push(`${central}: aún no hay precios de hoy (el último día es ${referencia}).`)
       continue
     }
     if (periodo === "dia" && diasEntre(referencia, hoy) > 4) {
-      motivos.push(`${nombre}: el último día con precios es ${referencia}, demasiado viejo para publicarlo.`)
+      motivos.push(`${central}: el último día con precios es ${referencia}, demasiado viejo para publicarlo.`)
       continue
     }
 
-    const { data: usadas } = await supabase
+    const { data: usada } = await supabase
       .from("precios_carruseles")
-      .select("direccion")
+      .select("id")
       .eq("account_id", accountId)
       .eq("periodo", periodo)
+      .eq("direccion", DIRECCION)
       .eq("referencia", referencia)
       .eq("central", central)
-    const usadasSet = new Set(((usadas ?? []) as { direccion: string }[]).map((f) => f.direccion))
+      .maybeSingle()
+    if (usada) {
+      motivos.push(`${central}: los precios del ${referencia} ya se armaron; se espera un día nuevo.`)
+      continue
+    }
 
-    for (const direccion of ["bajaron", "subieron"] as Direccion[]) {
-      if (yaHoy.has(clave(central, direccion))) continue
-      if (usadasSet.has(direccion)) {
-        motivos.push(`${nombre}: los que ${direccion} del ${referencia} ya se armaron; se espera un día nuevo.`)
-        continue
-      }
-      const hora = sumarMinutos(direccion === "bajaron" ? a.horaBajaron : a.horaSubieron, n * ESCALON_MIN)
-      try {
-        const c = await armarCarrusel(accountId, rankings[direccion], instanteLocal(hoy, hora), hoy, a)
-        armados.push(`${nombre} ${periodo} ${direccion} ${referencia} (${c.imagenes.length} láminas, ${hora})`)
-      } catch (e) {
-        motivos.push(`${nombre} ${direccion}: ${e instanceof Error ? e.message : String(e)}`)
-      }
+    const hora = sumarMinutos(a.hora, n * ESCALON_MIN)
+    try {
+      const c = await armarCarrusel(accountId, lista, instanteLocal(hoy, hora), a)
+      armados.push(`${central} ${periodo} ${referencia} (${c.imagenes.length} láminas, ${lista.productos.length} productos, ${hora})`)
+    } catch (e) {
+      motivos.push(`${central}: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
   return { armados, motivos }
 }
 
-/** Rehace un carrusel con los datos de su mismo dia o semana. */
-export async function rehacerCarrusel(accountId: string, id: string, now: Date): Promise<void> {
-  const { data } = await supabaseAdmin().from("precios_carruseles").select("periodo, direccion, referencia, central, programado_para").eq("id", id).eq("account_id", accountId).maybeSingle()
-  const f = data as { periodo: Periodo; direccion: Direccion; referencia: string; central: string | null; programado_para: string } | null
-  if (!f) throw new Error("Ese carrusel no es de esta empresa.")
-  const rankings = await traerRankings(f.periodo, {
-    ...(f.periodo === "dia" ? { fecha: f.referencia } : { semana: f.referencia }),
-    ...(f.central ? { central: f.central } : {}),
-  })
-  // "Hoy" es el dia en que se publica: asi la portada dice "ayer" u "hoy" bien.
-  await armarCarrusel(accountId, rankings[f.direccion], new Date(f.programado_para), dayIn(ZONA, new Date(Math.max(now.getTime(), new Date(f.programado_para).getTime()))))
-}
-
-// ---------------------------------------------------------------- publicar
-
-
-// ------------------------------------------------------------------ videos
-
-/** Cuanto se espera, pasada la hora, a que terminen los videos antes de publicar la version fija. */
-const ESPERA_VIDEOS_MS = 20 * 60_000
-
-async function subirVideo(clave: string, nombre: string, mp4: Buffer): Promise<string> {
-  const supabase = supabaseAdmin()
-  // Con version en el nombre: un video rehecho no reutiliza la direccion del viejo (Meta y el navegador lo cachean).
-  const ruta = `${clave}/${nombre}-${Date.now().toString(36)}.mp4`
-  const { error } = await supabase.storage.from("carousels").upload(ruta, mp4, { contentType: "video/mp4", upsert: true })
-  if (error) throw new Error(`No se pudo subir ${nombre}: ${error.message}`)
-  return supabase.storage.from("carousels").getPublicUrl(ruta).data.publicUrl
-}
-
 /**
- * Arma los videos que faltan, de a una lamina, mientras quede tiempo antes de
- * `limite`. Cada lamina tarda (la portada, la que mas), asi que un carrusel se
- * completa en varias pasadas del tick. Pasos: una lamina de Instagram por
- * paso y, al final, el video de Facebook (el cierre de Facebook y todas
- * seguidas). Si algo falla, el carrusel queda con su version fija.
+ * Rehace un carrusel con los datos de ahora. La API da solo los ultimos
+ * precios: si ya hay un dia (o semana) mas nuevo, no se puede rehacer.
  */
-export async function avanzarVideos(accountId: string, limite: number): Promise<string[]> {
-  const supabase = supabaseAdmin()
-  const hechos: string[] = []
-  const { data } = await supabase
-    .from("precios_carruseles")
-    .select("id, periodo, direccion, referencia, central, datos, programado_para, videos")
-    .eq("account_id", accountId)
-    .eq("etapa", "listo")
-    .eq("video_estado", "pendiente")
-    .order("programado_para")
-    .limit(4)
-  const filas = (data ?? []) as { id: string; periodo: Periodo; direccion: Direccion; referencia: string; central: string | null; datos: Ranking; programado_para: string; videos: string[] | null }[]
-  if (filas.length === 0) return hechos
-  const a = await ajustesPrecios(accountId)
-
-  for (const f of filas) {
-    if (Date.now() + 60_000 > limite) break
-    const clave = claveDe(accountId, f)
-    const videos = [...(f.videos ?? [])]
-    try {
-      const d = await datosLaminas(accountId, f.datos, dayIn(ZONA, new Date(f.programado_para)), a)
-      const total = totalLaminas(d)
-      while (true) {
-        const paso = videos.length
-        // La portada y el paso de Facebook son los mas largos.
-        const estimado = paso === 0 ? 100_000 : 50_000
-        if (Date.now() + estimado > limite) break
-        if (paso < total) {
-          videos.push(await subirVideo(clave, `v${String(paso + 1).padStart(2, "0")}`, await animarUna(d, paso, "instagram")))
-          await supabase.from("precios_carruseles").update({ videos, updated_at: new Date().toISOString() }).eq("id", f.id).eq("etapa", "listo")
-          hechos.push(`${f.direccion} ${f.referencia}: lámina ${paso + 1}/${total}`)
-          continue
-        }
-        const comunes = await Promise.all(
-          videos.slice(0, total - 1).map(async (u) => {
-            const r = await fetch(u, { signal: AbortSignal.timeout(30_000) })
-            if (!r.ok) throw new Error(`No se pudo bajar ${u}: ${r.status}`)
-            return Buffer.from(await r.arrayBuffer())
-          })
-        )
-        const facebook = await unirVideos([...comunes, await animarUna(d, total - 1, "facebook")])
-        const url = await subirVideo(clave, "facebook", facebook)
-        await supabase
-          .from("precios_carruseles")
-          .update({ video_facebook: url, video_estado: "listo", video_error: null, updated_at: new Date().toISOString() })
-          .eq("id", f.id)
-          .eq("etapa", "listo")
-        hechos.push(`${f.direccion} ${f.referencia}: videos listos`)
-        break
-      }
-    } catch (e) {
-      const error = e instanceof Error ? e.message : String(e)
-      console.error("[precios] no se pudieron armar los videos", f.id, error)
-      await supabase.from("precios_carruseles").update({ video_estado: "error", video_error: error.slice(0, 1000) }).eq("id", f.id)
-      hechos.push(`${f.direccion} ${f.referencia}: error en videos (sale fijo)`)
-    }
-  }
-  return hechos
+export async function rehacerCarrusel(accountId: string, id: string): Promise<void> {
+  const { data } = await supabaseAdmin().from("precios_carruseles").select("periodo, direccion, referencia, central, programado_para").eq("id", id).eq("account_id", accountId).maybeSingle()
+  const f = data as { periodo: Periodo; direccion: string; referencia: string; central: string; programado_para: string } | null
+  if (!f) throw new Error("Ese carrusel no es de esta empresa.")
+  if (f.direccion !== DIRECCION || !f.central) throw new Error("Ese carrusel es del formato anterior: no se rehace.")
+  const lista = await traerLista(f.periodo, f.central, f.periodo === "semana" ? { semana: "cerrada" } : {})
+  if (lista.referencia !== f.referencia) throw new Error(`Ya no están los precios del ${f.referencia} (los últimos son del ${lista.referencia}).`)
+  await armarCarrusel(accountId, lista, new Date(f.programado_para))
 }
 
 // ---------------------------------------------------------------- publicar
 
 type Fila = {
   id: string
-  account_id: string
-  periodo: Periodo
-  direccion: Direccion
-  referencia: string
-  datos: Ranking
+  datos: ListaPrecios
   imagenes: string[]
   imagenes_facebook: string[]
-  videos: string[] | null
-  video_facebook: string | null
-  video_estado: "pendiente" | "listo" | "error" | null
   texto_instagram: string | null
   texto_facebook: string | null
-  programado_para: string
   instagram_id: string | null
   facebook_id: string | null
   intentos: number
@@ -438,15 +326,8 @@ type Fila = {
 /**
  * Publica un carrusel en las redes de la cuenta. Lo que ya salio en una red no
  * se repite: si Instagram salio y Facebook fallo, el reintento solo hace Facebook.
- *
- * Con los videos listos sale animado: en Instagram, un carrusel de videos; en
- * Facebook, que no admite videos en un post de varias fotos, un video con
- * todas las laminas seguidas. Si no, sale con las laminas fijas.
- *
- * Publicar videos tarda: si tras Instagram no queda tiempo antes de `limite`,
- * Facebook queda para la siguiente pasada (sin contar como intento fallido).
  */
-export async function publicarCarruselPrecios(accountId: string, id: string, limite?: number): Promise<{ ok: boolean; error?: string }> {
+export async function publicarCarruselPrecios(accountId: string, id: string): Promise<{ ok: boolean; error?: string }> {
   const supabase = supabaseAdmin()
   const a = await ajustesPrecios(accountId)
   const { data: reclamada } = await supabase
@@ -459,44 +340,28 @@ export async function publicarCarruselPrecios(accountId: string, id: string, lim
     .maybeSingle()
   if (!reclamada) return { ok: false, error: "El carrusel no está listo para publicar (o lo tomó otra pasada)." }
   const f = reclamada as Fila
-  const animado = f.video_estado === "listo" && (f.videos?.length ?? 0) >= 2 && !!f.video_facebook
 
   const cambios: Record<string, unknown> = {}
   const errores: string[] = []
-  let facebookDespues = false
 
   if (a.redes.includes("instagram") && !f.instagram_id) {
-    const r = animado
-      ? await publicarInstagram(accountId, { texto: f.texto_instagram ?? "", videosCarrusel: f.videos ?? [] })
-      : await publicarInstagram(accountId, { texto: f.texto_instagram ?? "", imagenes: f.imagenes })
+    const r = await publicarInstagram(accountId, { texto: f.texto_instagram ?? "", imagenes: f.imagenes })
     if (r.ok) cambios.instagram_id = r.postId
     else errores.push(`Instagram: ${r.error}`)
   }
   if (a.redes.includes("facebook") && !f.facebook_id) {
-    if (animado && limite && Date.now() + 150_000 > limite) {
-      facebookDespues = true
-    } else {
-      const r = animado
-        ? await publicarFacebook(accountId, { texto: f.texto_facebook ?? "", video: f.video_facebook!, titulo: tituloCarrusel(f.datos) })
-        : await publicarFacebook(accountId, { texto: f.texto_facebook ?? "", imagenes: f.imagenes_facebook.length ? f.imagenes_facebook : f.imagenes })
-      if (r.ok) {
-        cambios.facebook_id = r.postId
-        if (r.postId && r.postId !== "publicado") {
-          const c = await comentarFacebook(accountId, r.postId, comentarioFacebook(a.link))
-          if (!c.ok) console.error("[precios] no se pudo comentar el link", id, c.error)
-        }
-      } else errores.push(`Facebook: ${r.error}`)
-    }
-  }
-
-  // Facebook pendiente por tiempo, sin errores: vuelve a la cola tal cual.
-  if (facebookDespues && errores.length === 0) {
-    await supabase.from("precios_carruseles").update({ ...cambios, etapa: "listo", updated_at: new Date().toISOString() }).eq("id", id)
-    return { ok: true, error: "Facebook sale en la siguiente pasada." }
+    const r = await publicarFacebook(accountId, { texto: f.texto_facebook ?? "", imagenes: f.imagenes_facebook.length ? f.imagenes_facebook : f.imagenes })
+    if (r.ok) {
+      cambios.facebook_id = r.postId
+      if (r.postId && r.postId !== "publicado" && f.datos?.central) {
+        const c = await comentarFacebook(accountId, r.postId, comentarioFacebook(a.link, f.datos))
+        if (!c.ok) console.error("[precios] no se pudo comentar el link", id, c.error)
+      }
+    } else errores.push(`Facebook: ${r.error}`)
   }
 
   const intentos = f.intentos + 1
-  const fin = errores.length === 0 && !facebookDespues
+  const fin = errores.length === 0
   await supabase
     .from("precios_carruseles")
     .update({
@@ -511,11 +376,8 @@ export async function publicarCarruselPrecios(accountId: string, id: string, lim
   return fin ? { ok: true } : { ok: false, error: errores.join(" · ") }
 }
 
-/**
- * Publica, como mucho, un carrusel que ya llego a su hora. Si sus videos aun
- * se estan armando, lo espera un rato; pasado ese rato sale con las laminas fijas.
- */
-async function publicarElQueToca(accountId: string, now: Date, limite: number): Promise<string | null> {
+/** Publica, como mucho, un carrusel que ya llego a su hora. */
+async function publicarElQueToca(accountId: string, now: Date): Promise<string | null> {
   const supabase = supabaseAdmin()
   // Un reclamo huerfano (la pasada murio publicando) vuelve a la cola.
   await supabase
@@ -527,54 +389,34 @@ async function publicarElQueToca(accountId: string, now: Date, limite: number): 
 
   const { data } = await supabase
     .from("precios_carruseles")
-    .select("id, programado_para, periodo, direccion, referencia, video_estado, instagram_id")
+    .select("id, programado_para, periodo, central, referencia")
     .eq("account_id", accountId)
     .eq("etapa", "listo")
     .lte("programado_para", now.toISOString())
     .order("programado_para")
     .limit(5)
-  for (const f of (data ?? []) as { id: string; programado_para: string; periodo: string; direccion: string; referencia: string; video_estado: string | null; instagram_id: string | null }[]) {
-    const tarde = now.getTime() - new Date(f.programado_para).getTime()
-    if (tarde > VENCE_MS) {
+  for (const f of (data ?? []) as { id: string; programado_para: string; periodo: string; central: string; referencia: string }[]) {
+    if (now.getTime() - new Date(f.programado_para).getTime() > VENCE_MS) {
       await supabase.from("precios_carruseles").update({ etapa: "error", error: "No salió a su hora y los precios ya serían viejos." }).eq("id", f.id)
       continue
     }
-    if (f.video_estado === "pendiente" && !f.instagram_id) {
-      if (tarde < ESPERA_VIDEOS_MS) continue
-      // Se acabo la espera: sale fijo y no se siguen armando sus videos.
-      await supabase.from("precios_carruseles").update({ video_estado: "error", video_error: "Los videos no estuvieron a tiempo; salió con las láminas fijas." }).eq("id", f.id)
-    }
-    const r = await publicarCarruselPrecios(accountId, f.id, limite)
-    return `${f.periodo} ${f.direccion} ${f.referencia}: ${r.ok ? r.error ?? "publicado" : r.error}`
+    const r = await publicarCarruselPrecios(accountId, f.id)
+    return `${f.central} ${f.periodo} ${f.referencia}: ${r.ok ? "publicado" : r.error}`
   }
   return null
 }
 
-/** Lo que dura como mucho una pasada (la ruta del tick tiene 300 s). */
-const PASADA_MS = 270_000
-
-/**
- * La pasada del tick para una cuenta: armar lo que toque, publicar lo que
- * llego a su hora y, con el tiempo que quede, avanzar los videos.
- */
+/** La pasada del tick para una cuenta: armar lo que toque y publicar lo que llego a su hora. */
 export async function pasadaPrecios(accountId: string, now: Date): Promise<Record<string, unknown>> {
-  const inicio = Date.now()
-  const limite = inicio + PASADA_MS
   const a = await ajustesPrecios(accountId)
-  if (!a.activo) return { activo: false, sandia: sandiaConfigurada() }
-  if (a.desde && dayIn(ZONA, now) < a.desde) return { activo: true, sandia: sandiaConfigurada(), esperando: `Empieza el ${a.desde}.` }
+  if (!a.activo) return { activo: false, datos: sandiaConfigurada() }
+  if (a.desde && dayIn(ZONA, now) < a.desde) return { activo: true, datos: sandiaConfigurada(), esperando: `Empieza el ${a.desde}.` }
   let armado: unknown
   try {
     armado = await armarLosDeHoy(accountId, now)
   } catch (e) {
     armado = { error: e instanceof Error ? e.message : String(e) }
   }
-  const publicado = await publicarElQueToca(accountId, now, limite)
-  let videos: unknown = null
-  try {
-    videos = await avanzarVideos(accountId, limite - 20_000)
-  } catch (e) {
-    videos = { error: e instanceof Error ? e.message : String(e) }
-  }
-  return { activo: true, armado, publicado, videos }
+  const publicado = await publicarElQueToca(accountId, now)
+  return { activo: true, armado, publicado }
 }

@@ -1,15 +1,14 @@
 /**
- * Los movimientos de precios de la API de Sandia (usesandia.com).
+ * Los precios de una central, de la API de precios (usesandia.com).
  *
- * La API ya entrega el ranking calculado: los que mas subieron y los que mas
- * bajaron, del dia (ultima fecha con precios contra el reporte anterior) o de
- * la semana (primer precio de lunes a viernes contra el ultimo). Aqui solo se
- * pide, se deja en una forma comun para dia y semana, y se queda con cinco
- * productos distintos: el ranking es por producto y central, y el mismo
- * producto sale varias veces (la zanahoria en Pasto y en Neiva). De cada
- * producto se queda su movimiento mas fuerte.
+ * Se pide `/precios/ultimos` filtrado por la central: trae el ultimo precio
+ * por kilo de cada producto, el del reporte anterior y la variacion del dia y
+ * de la semana (lunes a viernes). De ahi sale el carrusel: todos los productos
+ * del ultimo dia, en orden alfabetico, y para la portada los dos que mas
+ * subieron y los dos que mas bajaron.
  *
- * Con `central` (slug: corabastos, cma, cavasa...) el ranking es solo de esa central.
+ * En las laminas y los textos la fuente es "Índice Agro": la API es solo de
+ * donde se leen los datos.
  *
  * La clave va en `SANDIA_API_KEY` (plan interno, sin limite diario).
  */
@@ -19,65 +18,58 @@ import { diasEntre } from "./textos"
 const BASE = "https://usesandia.com/api/v1"
 
 export type Periodo = "dia" | "semana"
-export type Direccion = "subieron" | "bajaron"
 
-export type Movimiento = {
+/** Por debajo de esto (en %) un precio se cuenta como estable. */
+const UMBRAL_ESTABLE = 0.5
+
+export type PrecioProducto = {
+  /** Slug del producto. */
   producto: string
   nombre: string
   imagen: string | null
-  categoria: string
-  central: string
-  ciudad: string
-  antes: number
-  ahora: number
-  /** La fecha del precio de antes y la del de ahora (YYYY-MM-DD). */
-  fechaAntes: string
-  fechaAhora: string
-  diferencia: number
-  porcentaje: number
+  /** Precio por kilo del dia (o del cierre de la semana). */
+  precio: number
+  /** Precio con el que se compara; null si no hay uno reciente. */
+  anterior: number | null
+  /** Variacion en %; null si no hay con que comparar. */
+  porcentaje: number | null
 }
 
-export type Ranking = {
+export type ListaPrecios = {
   periodo: Periodo
-  direccion: Direccion
-  /** La fecha del dia de los precios, o el lunes de la semana. */
+  /** La fecha de los precios, o el lunes de la semana. */
   referencia: string
   /** Solo semana: el lunes y el viernes de la semana calendario. */
   lunes?: string
   viernes?: string
+  central: { slug: string; nombre: string; ciudad: string }
+  /** Todos los productos de la central, en orden alfabetico. */
+  productos: PrecioProducto[]
+  /** Los dos que mas subieron y los dos que mas bajaron, para la portada. */
+  subieron: PrecioProducto[]
+  bajaron: PrecioProducto[]
   totales: { subieron: number; bajaron: number; estables: number; evaluados: number }
-  productos: Movimiento[]
-  /** Si el ranking es de una sola central: su slug, nombre y ciudad. Sin ella, todas las centrales. */
-  central?: { slug: string; nombre: string; ciudad: string }
 }
 
 type FilaApi = {
+  fecha: string
   producto: string
   producto_nombre: string
   producto_imagen?: string | null
-  categoria_nombre?: string
   central_nombre: string
   ciudad_nombre: string
-  precio_kilo?: number
-  precio_anterior?: number
-  fecha?: string
-  fecha_anterior?: string
-  precio_inicio?: number
-  precio_fin?: number
-  fecha_inicio?: string
-  fecha_fin?: string
-  diferencia: number
-  porcentaje: number
-}
-
-type BloqueApi = {
-  fecha?: string
-  lunes?: string
-  viernes?: string
-  total_evaluados: number
-  totales: { subieron: number; bajaron: number; estables: number }
-  subieron: FilaApi[]
-  bajaron: FilaApi[]
+  precio_kilo: number
+  precio_anterior: number | null
+  fecha_anterior: string | null
+  variacion: { diferencia: number; porcentaje: number } | null
+  variacion_semana: {
+    lunes: string
+    viernes: string
+    precio_inicio: number
+    precio_fin: number
+    fecha_fin: string
+    porcentaje: number
+  } | null
 }
 
 export function sandiaConfigurada(): boolean {
@@ -90,82 +82,83 @@ async function pedir(ruta: string, params: Record<string, string>): Promise<unkn
   const url = `${BASE}${ruta}?${new URLSearchParams(params).toString()}`
   const r = await fetch(url, { headers: { Authorization: `Bearer ${clave}` }, signal: AbortSignal.timeout(30_000), cache: "no-store" })
   const cuerpo = (await r.json().catch(() => null)) as { error?: { mensaje?: string } } | null
-  if (!r.ok) throw new Error(`Sandia respondió ${r.status}: ${cuerpo?.error?.mensaje ?? "sin detalle"}`)
+  if (!r.ok) throw new Error(`La API de precios respondió ${r.status}: ${cuerpo?.error?.mensaje ?? "sin detalle"}`)
   return cuerpo
 }
 
-function aMovimiento(f: FilaApi, periodo: Periodo): Movimiento {
-  const dia = periodo === "dia"
-  return {
-    producto: f.producto,
-    nombre: f.producto_nombre,
-    imagen: f.producto_imagen ?? null,
-    categoria: f.categoria_nombre ?? "",
-    central: f.central_nombre,
-    ciudad: f.ciudad_nombre,
-    antes: Number(dia ? f.precio_anterior : f.precio_inicio),
-    ahora: Number(dia ? f.precio_kilo : f.precio_fin),
-    fechaAntes: String(dia ? f.fecha_anterior : f.fecha_inicio),
-    fechaAhora: String(dia ? f.fecha : f.fecha_fin),
-    diferencia: f.diferencia,
-    porcentaje: f.porcentaje,
-  }
-}
+/** "Papa  criolla" -> "Papa criolla" */
+const limpio = (t: string) => t.replace(/\s+/g, " ").trim()
 
-/** Cinco productos distintos, cada uno con su movimiento mas fuerte (la lista ya viene ordenada). */
-function cincoDistintos(filas: FilaApi[], periodo: Periodo): Movimiento[] {
-  const vistos = new Set<string>()
-  const salida: Movimiento[] = []
-  for (const f of filas) {
-    if (vistos.has(f.producto)) continue
-    const m = aMovimiento(f, periodo)
-    if (!(m.antes > 0) || !(m.ahora > 0)) continue
-    // En el diario, la API compara cada central con su reporte anterior, que
-    // puede ser de hace una semana si la central dejo de reportar. Eso no es
-    // "lo que subio ayer": se aceptan hasta 4 dias (cubre el fin de semana y
-    // un lunes festivo).
-    if (periodo === "dia" && diasEntre(m.fechaAntes, m.fechaAhora) > 4) continue
-    vistos.add(f.producto)
-    salida.push(m)
-    if (salida.length === 5) break
+/**
+ * Arma la lista a partir de las filas de la API (de una sola central).
+ * Separado de la llamada para poder probarlo con datos guardados.
+ */
+export function armarLista(filas: FilaApi[], periodo: Periodo, slug: string): ListaPrecios {
+  if (filas.length === 0) throw new Error(`No hay precios de ${slug}.`)
+  let elegidas: FilaApi[]
+  let referencia: string
+  let lunes: string | undefined
+  let viernes: string | undefined
+
+  if (periodo === "dia") {
+    // El ultimo dia que reporto la central; los productos que no salieron ese dia no van.
+    referencia = filas.reduce((m, f) => (f.fecha > m ? f.fecha : m), "")
+    elegidas = filas.filter((f) => f.fecha === referencia)
+  } else {
+    elegidas = filas.filter((f) => f.variacion_semana)
+    const s = elegidas[0]?.variacion_semana
+    if (!s) throw new Error(`No hay precios de la semana en ${slug}.`)
+    referencia = s.lunes
+    lunes = s.lunes
+    viernes = s.viernes
   }
-  return salida
+
+  const productos: PrecioProducto[] = elegidas
+    .map((f): PrecioProducto => {
+      if (periodo === "semana") {
+        const s = f.variacion_semana!
+        return { producto: f.producto, nombre: limpio(f.producto_nombre), imagen: f.producto_imagen ?? null, precio: s.precio_fin, anterior: s.precio_inicio, porcentaje: s.porcentaje }
+      }
+      // La API compara con el reporte anterior de la central, que puede ser de
+      // hace semanas si dejo de reportar ese producto: se aceptan hasta 4 dias
+      // (fin de semana y un lunes festivo); si no, sale sin variacion.
+      const reciente = f.variacion && f.fecha_anterior && diasEntre(f.fecha_anterior, f.fecha) <= 4
+      return {
+        producto: f.producto,
+        nombre: limpio(f.producto_nombre),
+        imagen: f.producto_imagen ?? null,
+        precio: f.precio_kilo,
+        anterior: reciente ? f.precio_anterior : null,
+        porcentaje: reciente ? f.variacion!.porcentaje : null,
+      }
+    })
+    .filter((p) => p.precio > 0)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
+
+  const conCambio = productos.filter((p) => p.porcentaje !== null)
+  const subieron = conCambio.filter((p) => p.porcentaje! >= UMBRAL_ESTABLE)
+  const bajaron = conCambio.filter((p) => p.porcentaje! <= -UMBRAL_ESTABLE)
+
+  const f0 = elegidas[0] ?? filas[0]
+  return {
+    periodo,
+    referencia,
+    ...(lunes ? { lunes, viernes } : {}),
+    central: { slug, nombre: f0.central_nombre, ciudad: f0.ciudad_nombre },
+    productos,
+    subieron: [...subieron].sort((a, b) => b.porcentaje! - a.porcentaje!).slice(0, 2),
+    bajaron: [...bajaron].sort((a, b) => a.porcentaje! - b.porcentaje!).slice(0, 2),
+    totales: { subieron: subieron.length, bajaron: bajaron.length, estables: conCambio.length - subieron.length - bajaron.length, evaluados: conCambio.length },
+  }
 }
 
 /**
- * Los dos rankings (subieron y bajaron) de un periodo.
- *
- *   dia     `fecha` opcional (YYYY-MM-DD); sin ella, la ultima con precios.
- *   semana  `semana`: "cerrada" (la ultima de lunes a viernes ya cerrada), o
- *           una fecha de esa semana.
+ * Todos los precios de una central: los del ultimo dia que reporto (`dia`) o
+ * los de la ultima semana de lunes a viernes ya cerrada (`semana`).
  */
-export async function traerRankings(
-  periodo: Periodo,
-  opciones: { fecha?: string; semana?: string; central?: string } = {}
-): Promise<Record<Direccion, Ranking>> {
-  const params: Record<string, string> = { periodo, limite: "80" }
-  if (opciones.central) params.central = opciones.central
-  if (periodo === "dia" && opciones.fecha) params.fecha = opciones.fecha
+export async function traerLista(periodo: Periodo, central: string, opciones: { semana?: "auto" | "cerrada" } = {}): Promise<ListaPrecios> {
+  const params: Record<string, string> = { central, dias_vigencia: periodo === "dia" ? "7" : "14" }
   if (periodo === "semana") params.semana = opciones.semana ?? "cerrada"
-  const datos = (await pedir("/precios/movimientos", params)) as Partial<Record<Periodo, BloqueApi>>
-  const bloque = datos[periodo]
-  if (!bloque) throw new Error(`Sandia no devolvió el bloque "${periodo}".`)
-
-  const referencia = periodo === "dia" ? bloque.fecha : bloque.lunes
-  if (!referencia) throw new Error("Sandia no devolvió la fecha de los precios.")
-  const totales = { ...bloque.totales, evaluados: bloque.total_evaluados }
-  // El nombre de la central sale de sus filas (la API no lo da aparte).
-  const fila = opciones.central ? [...(bloque.subieron ?? []), ...(bloque.bajaron ?? [])][0] : undefined
-  if (opciones.central && !fila) throw new Error(`Sandia no trajo precios de ${opciones.central}.`)
-  const central = fila ? { slug: opciones.central!, nombre: fila.central_nombre, ciudad: fila.ciudad_nombre } : undefined
-  const armar = (direccion: Direccion): Ranking => ({
-    periodo,
-    direccion,
-    referencia,
-    ...(periodo === "semana" ? { lunes: bloque.lunes, viernes: bloque.viernes } : {}),
-    totales,
-    productos: cincoDistintos(bloque[direccion] ?? [], periodo),
-    ...(central ? { central } : {}),
-  })
-  return { subieron: armar("subieron"), bajaron: armar("bajaron") }
+  const datos = (await pedir("/precios/ultimos", params)) as { datos?: FilaApi[] }
+  return armarLista(datos.datos ?? [], periodo, central)
 }

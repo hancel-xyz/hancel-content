@@ -1,7 +1,7 @@
 import "server-only"
 
 import { ajustesPrecios, type AjustesPrecios } from "@/engine/precios/pipeline"
-import { sandiaConfigurada, type Ranking } from "@/engine/precios/sandia"
+import { sandiaConfigurada, type ListaPrecios } from "@/engine/precios/sandia"
 import { tituloCarrusel } from "@/engine/precios/textos"
 import { supabaseAdmin } from "@/engine/supabase-admin"
 import { idDeCuentaActual } from "@/lib/accounts"
@@ -17,7 +17,8 @@ export type FichaPrecios = {
   id: string
   titulo: string
   periodo: "dia" | "semana"
-  direccion: "subieron" | "bajaron"
+  /** "todos" en los de ahora; "subieron" o "bajaron" en los del formato anterior. */
+  direccion: "todos" | "subieron" | "bajaron"
   referencia: string
   etapa: EtapaPrecios
   imagenes: string[]
@@ -35,7 +36,9 @@ export type FichaPrecios = {
   instagramId: string | null
   facebookId: string | null
   error: string | null
-  productos: { nombre: string; porcentaje: number }[]
+  /** Los que van en la portada: los que mas subieron y bajaron (o, en los viejos, el ranking). */
+  productos: { nombre: string; porcentaje: number | null }[]
+  totalProductos: number
 }
 
 export type TableroPrecios = {
@@ -60,13 +63,15 @@ export async function getTableroPrecios(): Promise<TableroPrecios> {
 
   const fichas: Record<EtapaPrecios, FichaPrecios[]> = { listo: [], publicando: [], publicado: [], error: [], descartado: [] }
   for (const f of (data ?? []) as Record<string, unknown>[]) {
-    const datos = f.datos as Ranking
+    // Los del formato anterior guardaban el ranking: { direccion, productos: [{ nombre, porcentaje }] }.
+    const datos = f.datos as ListaPrecios
+    const destacados = datos.subieron ? [...datos.subieron, ...(datos.bajaron ?? [])] : (datos.productos ?? [])
     const etapa = f.etapa as EtapaPrecios
     fichas[etapa]?.push({
       id: String(f.id),
       titulo: tituloCarrusel(datos),
       periodo: f.periodo as "dia" | "semana",
-      direccion: f.direccion as "subieron" | "bajaron",
+      direccion: f.direccion as FichaPrecios["direccion"],
       referencia: String(f.referencia),
       etapa,
       imagenes: (f.imagenes as string[]) ?? [],
@@ -75,7 +80,7 @@ export async function getTableroPrecios(): Promise<TableroPrecios> {
       videoFacebook: (f.video_facebook as string | null) ?? null,
       videoEstado: (f.video_estado as FichaPrecios["videoEstado"]) ?? null,
       videoError: (f.video_error as string | null) ?? null,
-      totalLaminas: (datos.productos?.length ?? 0) + 2,
+      totalLaminas: ((f.imagenes as string[]) ?? []).length,
       textoInstagram: (f.texto_instagram as string | null) ?? null,
       textoFacebook: (f.texto_facebook as string | null) ?? null,
       programadoPara: String(f.programado_para),
@@ -83,7 +88,8 @@ export async function getTableroPrecios(): Promise<TableroPrecios> {
       instagramId: (f.instagram_id as string | null) ?? null,
       facebookId: (f.facebook_id as string | null) ?? null,
       error: (f.error as string | null) ?? null,
-      productos: (datos.productos ?? []).map((p) => ({ nombre: p.nombre, porcentaje: p.porcentaje })),
+      productos: destacados.map((p) => ({ nombre: p.nombre, porcentaje: p.porcentaje })),
+      totalProductos: datos.productos?.length ?? 0,
     })
   }
   // Los listos, el proximo primero.

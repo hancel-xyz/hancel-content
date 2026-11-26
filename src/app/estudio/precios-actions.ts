@@ -47,15 +47,14 @@ export async function guardarActivoPrecios(activo: boolean): Promise<Resultado> 
   }
 }
 
-export async function guardarHorasPrecios(horaBajaron: string, horaSubieron: string): Promise<Resultado> {
-  const a = horaBajaron.trim().padStart(5, "0")
-  const b = horaSubieron.trim().padStart(5, "0")
-  if (!HORA.test(a) || !HORA.test(b)) return { ok: false, error: "Las horas van como 13:00." }
+export async function guardarHoraPrecios(hora: string): Promise<Resultado> {
+  const a = hora.trim().padStart(5, "0")
+  if (!HORA.test(a)) return { ok: false, error: "La hora va como 13:00." }
   try {
     const cuenta = await cuentaActual()
-    await guardarAjustesPrecios(cuenta.id, { horaBajaron: a, horaSubieron: b })
+    await guardarAjustesPrecios(cuenta.id, { hora: a })
     revalidatePath("/")
-    return { ok: true, aviso: `Guardado: bajaron a las ${a}, subieron a las ${b}.` }
+    return { ok: true, aviso: `Guardado: la primera central sale a las ${a} y las demás cada 20 minutos.` }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
@@ -64,7 +63,7 @@ export async function guardarHorasPrecios(horaBajaron: string, horaSubieron: str
 export async function armarPreciosAhora(periodo: "dia" | "semana"): Promise<Resultado> {
   const cuenta = await cuentaActual()
   if (!(await despertar(cuenta.slug, { armar: periodo }))) return { ok: false, error: "No se pudo llamar al motor (falta INGEST_SECRET)." }
-  return { ok: true, aviso: `Armando los ${periodo === "dia" ? "diarios" : "semanales"} con los datos de Sandia: en un minuto aparecen en Listos.` }
+  return { ok: true, aviso: `Armando los ${periodo === "dia" ? "diarios" : "semanales"} con los precios de cada central: en unos minutos aparecen en Listos.` }
 }
 
 async function delaCuenta(id: string) {
@@ -89,7 +88,7 @@ export async function rehacerPrecio(id: string): Promise<Resultado> {
   if (!fila) return { ok: false, error: "Ese carrusel no es de esta empresa." }
   if (fila.etapa === "publicado") return { ok: false, error: "Ya está publicado: no se rehace." }
   if (!(await despertar(cuenta.slug, { rehacer: id }))) return { ok: false, error: "No se pudo llamar al motor (falta INGEST_SECRET)." }
-  return { ok: true, aviso: "Rehaciendo las láminas con los datos de Sandia: en un minuto se actualizan." }
+  return { ok: true, aviso: "Rehaciendo las láminas con los precios de ahora: en un minuto se actualizan." }
 }
 
 export async function descartarPrecio(id: string): Promise<Resultado> {

@@ -49,8 +49,8 @@ const PIPELINES = [
  * piezas por red) y el de redaccion (la noticia redactada entera, con fuentes).
  * Comparten la extraccion y el analisis; se cambia de uno a otro arriba.
  *
- * El tercero, precios, no parte de noticias: toma los precios de Sandia y arma
- * los carruseles de lo que mas subio y bajo, sin IA.
+ * El tercero, precios, no parte de noticias: toma los precios de cada central y arma
+ * un carrusel por central con todos sus precios, sin IA.
  */
 export default async function ContenidoPage({
   searchParams,

@@ -170,6 +170,26 @@ export const FUENTES = {
       bold: "Oswald-700.ttf",
     },
   },
+  /** La grotesca de los carruseles de precios (libre, Google Fonts). */
+  Inter: {
+    nombre: "Inter",
+    archivos: {
+      light: "Inter-300.woff",
+      regular: "Inter-400.woff",
+      semibold: "Inter-600.woff",
+      bold: "Inter-700.woff",
+    },
+  },
+  /** La monoespaciada de las etiquetas de los carruseles de precios (libre, Google Fonts). */
+  JetBrainsMono: {
+    nombre: "JetBrains Mono",
+    archivos: {
+      light: "JetBrainsMono-300.woff",
+      regular: "JetBrainsMono-400.woff",
+      semibold: "JetBrainsMono-500.woff",
+      bold: "JetBrainsMono-700.woff",
+    },
+  },
 } as const
 
 export type NombreFuente = keyof typeof FUENTES

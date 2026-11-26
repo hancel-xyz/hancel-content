@@ -7,7 +7,7 @@ import {
   armarPreciosAhora,
   descartarPrecio,
   guardarActivoPrecios,
-  guardarHorasPrecios,
+  guardarHoraPrecios,
   publicarPrecioAhora,
   recuperarPrecio,
   rehacerPrecio,
@@ -23,9 +23,10 @@ import type { EtapaPrecios, FichaPrecios, TableroPrecios as Datos } from "@/lib/
 /**
  * El tablero del pipeline de precios.
  *
- * Tres procesos, sin IA: los datos de Sandia (lo que mas subio y bajo), el
- * carrusel (laminas dibujadas y textos de cada red) y la publicacion a su hora.
- * De lunes a viernes salen los dos diarios; el sabado, los dos semanales.
+ * Tres procesos, sin IA: los precios de cada central, el carrusel (portada
+ * con los que mas subieron, la lista de todos los productos y el cierre) y la
+ * publicacion a su hora. Uno por central: de lunes a viernes, el del dia; el
+ * sabado, el de la semana.
  */
 
 const COLUMNAS: { id: EtapaPrecios; titulo: string; pista: string }[] = [
@@ -42,7 +43,8 @@ function hora(iso: string): string {
   return new Intl.DateTimeFormat("es-CO", { timeZone: "America/Bogota", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso))
 }
 
-function pct(p: number): string {
+function pct(p: number | null): string {
+  if (p === null) return ""
   return `${p >= 0 ? "+" : "−"}${Math.abs(p).toFixed(1).replace(".", ",")}%`
 }
 
@@ -126,9 +128,8 @@ export function TableroPrecios({ datos }: { datos: Datos }) {
 }
 
 function Ajustes({ datos, pending, correr }: { datos: Datos; pending: boolean; correr: (a: () => Promise<Resultado>) => void }) {
-  const [bajaron, setBajaron] = React.useState(datos.ajustes.horaBajaron)
-  const [subieron, setSubieron] = React.useState(datos.ajustes.horaSubieron)
-  const cambiadas = bajaron !== datos.ajustes.horaBajaron || subieron !== datos.ajustes.horaSubieron
+  const [horaPrimera, setHoraPrimera] = React.useState(datos.ajustes.hora)
+  const cambiada = horaPrimera !== datos.ajustes.hora
   return (
     <div className="bg-card flex flex-col gap-3 rounded-lg border p-3 text-sm">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
@@ -139,13 +140,12 @@ function Ajustes({ datos, pending, correr }: { datos: Datos; pending: boolean; c
           </span>
         </label>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-muted-foreground">Bajaron a las</span>
-          <Input value={bajaron} onChange={(e) => setBajaron(e.target.value)} className="h-8 w-20" aria-label="Hora de los que bajaron" />
-          <span className="text-muted-foreground">y subieron a las</span>
-          <Input value={subieron} onChange={(e) => setSubieron(e.target.value)} className="h-8 w-20" aria-label="Hora de los que subieron" />
-          {cambiadas ? (
-            <Button size="sm" disabled={pending} onClick={() => correr(() => guardarHorasPrecios(bajaron, subieron))}>
-              Guardar horas
+          <span className="text-muted-foreground">Primera central a las</span>
+          <Input value={horaPrimera} onChange={(e) => setHoraPrimera(e.target.value)} className="h-8 w-20" aria-label="Hora de la primera central" />
+          <span className="text-muted-foreground">y las demás cada 20 min</span>
+          {cambiada ? (
+            <Button size="sm" disabled={pending} onClick={() => correr(() => guardarHoraPrecios(horaPrimera))}>
+              Guardar hora
             </Button>
           ) : null}
         </div>
@@ -159,7 +159,7 @@ function Ajustes({ datos, pending, correr }: { datos: Datos; pending: boolean; c
         </div>
       </div>
       <p className="text-muted-foreground text-xs">
-        Lunes a viernes: los 5 que más bajaron y los 5 que más subieron, con los precios del mismo día (Sandia los carga entre las 11 y las 12). Sábado: los de la semana de lunes a viernes. Instagram lleva el link de {datos.ajustes.link.replace(/^https?:\/\//, "")} en la descripción; Facebook, en el primer comentario. Sin IA: solo datos.
+        Un carrusel por central ({datos.ajustes.centrales.join(", ")}): portada con los 2 que más subieron y los 2 que más bajaron, la lista de todos los productos con su precio por kilo y cuánto subió o bajó, y cierre que invita al portal ({datos.ajustes.link.replace(/^https?:\/\//, "")}: en Instagram, link en la descripción; en Facebook, en el primer comentario). Lunes a viernes, con los precios del mismo día (llegan entre las 11 y las 12); sábado, los de la semana. Fuente: Índice Agro. Sin IA: solo datos.
       </p>
     </div>
   )
@@ -178,7 +178,11 @@ function Tarjeta({ f, onAbrir }: { f: FichaPrecios; onAbrir: () => void }) {
           <Badge variant="outline" className="font-normal">
             {f.periodo === "dia" ? "Diario" : "Semanal"}
           </Badge>
-          <Badge className={f.direccion === "subieron" ? "bg-red-600 text-white" : "bg-emerald-600 text-white"}>{f.direccion === "subieron" ? "Subieron" : "Bajaron"}</Badge>
+          {f.direccion === "todos" ? (
+            <Badge variant="outline" className="font-normal">{`${f.totalProductos} productos`}</Badge>
+          ) : (
+            <Badge className={f.direccion === "subieron" ? "bg-red-600 text-white" : "bg-emerald-600 text-white"}>{f.direccion === "subieron" ? "Subieron" : "Bajaron"}</Badge>
+          )}
           {f.instagramId ? <Badge variant="secondary">Instagram</Badge> : null}
           {f.facebookId ? <Badge variant="secondary">Facebook</Badge> : null}
           <EstadoVideo f={f} />
@@ -212,7 +216,7 @@ function Detalle({ ficha, onClose, pending, correr }: { ficha: FichaPrecios | nu
         <DialogHeader>
           <DialogTitle className="text-base leading-snug">{ficha.titulo}</DialogTitle>
           <DialogDescription>
-            {ficha.productos.map((p) => `${p.nombre} ${pct(p.porcentaje)}`).join(" · ")}
+            {`${ficha.direccion === "todos" ? `${ficha.totalProductos} productos · en portada: ` : ""}${ficha.productos.map((p) => `${p.nombre} ${pct(p.porcentaje)}`).join(" · ")}`}
           </DialogDescription>
         </DialogHeader>
 

@@ -28,7 +28,7 @@ const CANALES = [
   { id: "google", nombre: "Google", color: "var(--canal-3)" },
   { id: "directo", nombre: "Directo", color: "var(--canal-4)" },
   { id: "whatsapp", nombre: "WhatsApp", color: "var(--canal-5)" },
-  { id: "sandia", nombre: "Sandia (precios)", color: "var(--canal-6)" },
+  { id: "sandia", nombre: "Precios (Índice Agro)", color: "var(--canal-6)" },
   { id: "otros", nombre: "Otros", color: "var(--canal-7)" },
 ] as const
 type IdCanal = (typeof CANALES)[number]["id"]
