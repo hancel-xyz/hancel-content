@@ -93,10 +93,8 @@ const etiquetaCentral = (l: ListaPrecios) => `#${nombreCentral(l.central).titulo
 
 const linea = (p: PrecioProducto, sube: boolean) => `${sube ? "▲" : "▼"} ${p.nombre}: ${pesos(p.precio)}/kg (${sube ? "subió" : "bajó"} ${porcentajeAbs(p.porcentaje ?? 0)})`
 
-/** El link del portal a la pagina de la central: "https://usesandia.com/central/corabastos". */
-export const linkCentral = (link: string, l: Pick<ListaPrecios, "central">) => `${link.replace(/\/$/, "")}/central/${l.central.slug}`
 
-/** "https://usesandia.com/" -> "usesandia.com" */
+/** "https://indiceagro.co/precios/co" -> "indiceagro.co/precios/co" */
 export const dominioDe = (link: string) => link.replace(/^https?:\/\//, "").replace(/\/$/, "")
 
 /**
@@ -122,7 +120,7 @@ export function textoDelPost(l: ListaPrecios, red: "instagram" | "facebook", lin
 
   const portal =
     red === "instagram"
-      ? `¿Y el precio de lo que usted compra o vende? Consulte todos los precios de ${c.texto} y de las demás centrales en ${dominioDe(link)} (link en la descripción): ${linkCentral(link, l)}`
+      ? `¿Y el precio de lo que usted compra o vende? Consulte todos los precios de ${c.texto} y de las demás centrales en ${dominioDe(link)} (link en la descripción): ${link}`
       : `¿Y el precio de lo que usted compra o vende? Consulte todos los precios de ${c.texto} y de las demás centrales en el link del primer comentario.`
 
   const cierre = `Publicamos los precios de ${c.texto} cada día: síganos y guarde este post.\n¿Qué precio quiere que revisemos? Escríbanos.`
@@ -132,7 +130,7 @@ export function textoDelPost(l: ListaPrecios, red: "instagram" | "facebook", lin
 
 /** El primer comentario de Facebook, con el link a la central. */
 export function comentarioFacebook(link: string, l: Pick<ListaPrecios, "central">): string {
-  return `📊 Consulte aquí todos los precios de hoy en ${nombreCentral(l.central).conCiudad}: ${linkCentral(link, l)}`
+  return `📊 Consulte aquí todos los precios de hoy en ${nombreCentral(l.central).conCiudad}: ${link}`
 }
 
 /** El titulo corto del carrusel, para el tablero. */

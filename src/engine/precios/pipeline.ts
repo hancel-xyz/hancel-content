@@ -47,7 +47,7 @@ export type AjustesPrecios = {
   centrales: string[]
 }
 
-const POR_DEFECTO: AjustesPrecios = { activo: false, hora: "13:00", link: "https://usesandia.com", redes: ["instagram", "facebook"], desde: null, centrales: ["corabastos"] }
+const POR_DEFECTO: AjustesPrecios = { activo: false, hora: "13:00", link: "https://indiceagro.co/precios/co", redes: ["instagram", "facebook"], desde: null, centrales: ["corabastos"] }
 const ZONA = "America/Bogota"
 /** En la tabla, de cuando habia un carrusel de los que subieron y otro de los que bajaron. */
 const DIRECCION = "todos"
