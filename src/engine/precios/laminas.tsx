@@ -52,7 +52,7 @@ export type DatosLaminas = {
   logo: string | null
   /** Imagen de cada producto, ya reducida (data URI), por slug. */
   imagenes: Record<string, string | null>
-  /** El portal de precios, sin protocolo: "indiceagro.co/precios/co". */
+  /** El portal de precios, sin protocolo: "usesandia.com". */
   dominio: string
 }
 
